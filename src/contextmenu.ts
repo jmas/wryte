@@ -30,11 +30,12 @@ function ensureStyles(): void {
   position: fixed;
   z-index: 2147483000;
   box-sizing: border-box;
-  background: #ffffff;
-  border: 1px solid #e6e6e6;
+  background: var(--wryte-surface, #ffffff);
+  border: 1px solid var(--wryte-border, #e6e6e6);
   border-radius: 8px;
   padding: 4px;
   font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--wryte-text, #1d1d1f);
   -webkit-user-select: none;
   user-select: none;
   display: flex;
@@ -48,7 +49,7 @@ function ensureStyles(): void {
   background: transparent;
   border-radius: 4px;
   cursor: pointer;
-  color: #1d1d1f;
+  color: var(--wryte-text, #1d1d1f);
 }
 .wryte-context-item--icon {
   display: inline-flex;
@@ -64,7 +65,7 @@ function ensureStyles(): void {
 }
 .wryte-context-item:hover,
 .wryte-context-item:focus-visible {
-  background: #f3f4f6;
+  background: var(--wryte-hover, #f3f4f6);
   outline: none;
 }
 .wryte-context-item:disabled {
@@ -72,16 +73,16 @@ function ensureStyles(): void {
   cursor: default;
 }
 .wryte-context-item--icon.is-active {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--wryte-accent, #2563eb);
+  color: var(--wryte-accent-contrast, #ffffff);
 }
 .wryte-context-item--icon.is-active:hover:not(:disabled) {
-  background: #2563eb;
+  background: var(--wryte-accent, #2563eb);
 }
 .wryte-context-divider {
   width: 1px;
   height: 20px;
-  background: #e5e7eb;
+  background: var(--wryte-divider, #e5e7eb);
   margin: 0 4px;
 }
 .wryte-context-menu--link {
@@ -94,27 +95,29 @@ function ensureStyles(): void {
   min-width: 180px;
   font: inherit;
   padding: 4px 6px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--wryte-border-strong, #d1d5db);
   border-radius: 4px;
+  background: var(--wryte-surface, #ffffff);
+  color: var(--wryte-text, #1d1d1f);
 }
 .wryte-plus-button {
   position: absolute;
-  width: 30px;
-  height: 30px;
+  width: 2rem;
+  height: 2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid #d1d5db;
-  background: #ffffff;
-  color: #6b7280;
+  border: 1px solid var(--wryte-border-strong, #d1d5db);
+  background: var(--wryte-surface, #ffffff);
+  color: var(--wryte-text-muted, #6b7280);
   cursor: pointer;
   z-index: 10;
 }
 .wryte-plus-button:hover {
-  color: #2563eb;
-  border-color: #2563eb;
+  color: var(--wryte-accent, #2563eb);
+  border-color: var(--wryte-accent, #2563eb);
 }`
   document.head.appendChild(style)
 }
@@ -139,6 +142,8 @@ export class ContextMenuController {
   private menu: HTMLElement | null = null
   private anchor: Anchor | null = null
   private plusButton: HTMLButtonElement | null = null
+  private plusPositionRaf: number | null = null
+  private plusFontsListenerAttached = false
   private fileInput: HTMLInputElement | null = null
   private longPressTimer: ReturnType<typeof setTimeout> | null = null
   private longPressOrigin: { x: number; y: number } | null = null
@@ -209,7 +214,7 @@ export class ContextMenuController {
 
   private handleSelectionChange = (): void => {
     if (this.anchor === 'pointer' || this.anchor === 'block') return
-    if (!this.editorFocused() || this.editor.options.editable === false) {
+    if (!this.editorFocused() || this.editor.readonly) {
       this.hidePlusButton()
       this.close()
       return
@@ -309,12 +314,68 @@ export class ContextMenuController {
         this.editor.element.style.position = 'relative'
       }
     }
-    this.positionPlusButton()
     this.plusButton.style.display = 'inline-flex'
+    this.positionPlusButton()
+    // The position is computed from `coordsAtPos` right now, but at
+    // initialization (autofocus) that can be before the browser has settled on
+    // its final layout — fonts and images still loading, the page itself still
+    // laying out — so the caret line can shift after this moment, leaving the
+    // button floating above (or below) the empty line. Re-position on the next
+    // frame and whenever the layout can change again so the button tracks the
+    // line once it has settled.
+    this.schedulePlusReposition()
+    window.addEventListener('resize', this.handlePlusLayoutChange)
+    window.addEventListener('scroll', this.handlePlusLayoutChange, true)
+    window.addEventListener('load', this.handlePlusLayoutChange)
+    if (document.fonts?.ready && !this.plusFontsListenerAttached) {
+      this.plusFontsListenerAttached = true
+      document.fonts.ready.then(() => {
+        this.plusFontsListenerAttached = false
+        this.handlePlusLayoutChange()
+      })
+    }
   }
 
   private hidePlusButton(): void {
+    this.cancelPlusReposition()
+    window.removeEventListener('resize', this.handlePlusLayoutChange)
+    window.removeEventListener('scroll', this.handlePlusLayoutChange, true)
+    window.removeEventListener('load', this.handlePlusLayoutChange)
     if (this.plusButton) this.plusButton.style.display = 'none'
+  }
+
+  // Re-position the button once the current layout has settled, without
+  // stacking frames: `showPlusButton` (via `close`) can run several times in
+  // a row, and each would otherwise queue its own re-position.
+  private schedulePlusReposition(): void {
+    if (this.plusPositionRaf != null) return
+    this.plusPositionRaf = requestAnimationFrame(() => {
+      this.plusPositionRaf = null
+      this.handlePlusLayoutChange()
+    })
+  }
+
+  private cancelPlusReposition(): void {
+    if (this.plusPositionRaf == null) return
+    cancelAnimationFrame(this.plusPositionRaf)
+    this.plusPositionRaf = null
+  }
+
+  // Re-run after a layout change (frame, resize, scroll, load, font load).
+  // The caret may have left the empty line meanwhile, in which case the
+  // button must go away rather than be pinned to a stale position.
+  private handlePlusLayoutChange = (): void => {
+    if (!this.plusButton || this.plusButton.style.display === 'none') return
+    if (!this.editorFocused() || this.editor.readonly) {
+      this.hidePlusButton()
+      return
+    }
+    const state = this.editor.editorView.state
+    if (!this.caretInEmptyBlock(state)) {
+      this.hidePlusButton()
+      return
+    }
+    this.positionPlusButton()
   }
 
   private positionPlusButton(): void {
@@ -949,7 +1010,7 @@ export class ContextMenuController {
     // caret is still in an empty block (and the editor is focused and
     // editable), bring the (+) button back — e.g. after the block popup is
     // dismissed with Escape or an outside click.
-    if (this.editorFocused() && this.editor.options.editable !== false && this.hasAnyBlockAbility()) {
+    if (this.editorFocused() && !this.editor.readonly && this.hasAnyBlockAbility()) {
       const state = this.editor.editorView.state
       if (this.caretInEmptyBlock(state)) this.showPlusButton()
     }

@@ -144,4 +144,48 @@ describe('upload lifecycle', () => {
     // the environment teardown and throws "document is not defined".
     await new Promise((resolve) => setTimeout(resolve, 30))
   })
+
+  it('times out an unanswered upload', async () => {
+    const editor = new Editor(document.createElement('div'), { toolbar: false, uploadTimeout: 10 })
+    const errors: string[] = []
+    editor.element.addEventListener('wryte-upload-error', (event) => {
+      errors.push((event as CustomEvent).detail.error.message)
+    })
+    editor.insertFiles([imageFile()])
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(errors).toEqual(['upload timed out'])
+    expect(editor.getAttachments()).toHaveLength(0)
+    expect(editor.toMarkdown()).toBe('')
+  })
+
+  it('cancels the timeout timer when the upload succeeds in time', async () => {
+    const editor = new Editor(document.createElement('div'), { toolbar: false, uploadTimeout: 10 })
+    const errors: string[] = []
+    editor.element.addEventListener('wryte-upload-request', (event) => {
+      const detail = (event as CustomEvent).detail as { respond: (r: UploadSuccessResult) => void }
+      detail.respond({ url: 'https://cdn.example.com/photo.png' })
+    })
+    editor.element.addEventListener('wryte-upload-error', (event) => {
+      errors.push((event as CustomEvent).detail.error.message)
+    })
+    editor.insertFiles([imageFile()])
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(errors).toEqual([])
+    expect(editor.toMarkdown()).toBe('![photo.png](https://cdn.example.com/photo.png)')
+  })
+
+  it('ignores a second respond() call', () => {
+    const editor = makeEditor()
+    let respond: ((r: UploadSuccessResult) => void) | null = null
+    let successes = 0
+    editor.element.addEventListener('wryte-upload-request', (event) => {
+      respond = (event as CustomEvent).detail.respond
+    })
+    editor.element.addEventListener('wryte-upload-success', () => successes++)
+    editor.insertFiles([imageFile()])
+    respond!({ url: 'https://cdn.example.com/a.png' })
+    respond!({ url: 'https://cdn.example.com/b.png' })
+    expect(successes).toBe(1)
+    expect(editor.toMarkdown()).toBe('![photo.png](https://cdn.example.com/a.png)')
+  })
 })

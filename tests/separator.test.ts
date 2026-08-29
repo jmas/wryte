@@ -42,6 +42,6 @@ describe('trailing break after an inline attachment', () => {
     expect(styles).toContain('.ProseMirror hr')
     expect(styles).toContain('margin:1.5rem 0')
     expect(styles).toContain('height:1px')
-    expect(styles).toContain('background:#d4d4d8')
+    expect(styles).toContain('background:var(--wryte-hr)')
   })
 })

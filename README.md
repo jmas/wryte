@@ -75,7 +75,57 @@ editor.toMarkdown() // the current value
 editor.loadMarkdown("## New content")
 ```
 
-Supported attributes: `value`, `name`, `placeholder`, `input` (id of a hidden `<input>` that holds the initial markdown and receives updates — Trix-style), `toolbar` (id of an existing toolbar element), `autofocus`, `disabled`, `required`, `abilities` (comma-separated whitelist, see [Abilities](#abilities)).
+Supported attributes: `value`, `name`, `placeholder`, `input` (id of a hidden `<input>` that holds the initial markdown and receives updates — Trix-style), `toolbar` (id of an existing toolbar element), `autofocus`, `disabled`, `readonly`, `required`, `abilities` (comma-separated whitelist, see [Abilities](#abilities)).
+
+### Autofocus
+
+Control whether the editor grabs focus on load — as an HTML attribute, an element property, or a constructor option.
+
+The `autofocus` attribute focuses the editor as soon as it is created. Because an attribute's mere presence enables it, pass `autofocus="false"` to turn it off explicitly:
+
+```html
+<wryte-editor autofocus></wryte-editor>        <!-- focuses on load -->
+<wryte-editor autofocus="false"></wryte-editor> <!-- does not -->
+```
+
+The same flag is available as a `boolean` property: `element.autofocus` reflects the attribute (`true` unless the attribute is absent or literally `"false"`). Setting it to `true` on a live editor focuses it immediately:
+
+```js
+element.autofocus // true if the attribute is present and not "false"
+element.autofocus = true // focuses the editor
+element.autofocus = false
+```
+
+When building an editor programmatically, pass `autofocus: true` to `EditorOptions` (default `false`):
+
+```js
+const editor = new Editor(mount, { autofocus: true })
+```
+
+### Read-only
+
+A read-only editor still renders its content and stays focusable, selectable and copyable — the user just can't type or format anything. The formatting bubble, the (+) block-insertion popup and the image tools all disappear.
+
+Use the `readonly` attribute on the element (or the `readonly` property, which reflects it):
+
+```html
+<wryte-editor readonly></wryte-editor>
+```
+
+```js
+element.readonly = true  // stop editing (property reflects the attribute)
+element.readonly = false // allow editing again
+```
+
+The same flag is a constructor option for programmatic editors:
+
+```js
+const editor = new Editor(mount, { readonly: true })
+editor.readonly // true
+editor.readonly = false
+```
+
+Read-only differs from `disabled` in two ways: the value is still submitted with the form, and the editor remains selectable. `disabled` also blocks selection and suppresses the form value entirely. The `readonly`/`disabled` attributes work independently of each other, and `Editor#disable()`/`enable()` remain available for a runtime toggle.
 
 ## Uploads
 

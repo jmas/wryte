@@ -8,28 +8,106 @@
   </head>
   <body>
     <main>
-      <h1>wryte</h1>
-      <p>
+      <header class="page-head">
+        <h1>wryte <span class="tag">preview</span></h1>
+        <button type="button" class="theme-toggle" id="theme-toggle">Dark</button>
+      </header>
+
+      <p class="lede">
         A tag-first (markdown) rich text editor with a Trix-compatible API, built on ProseMirror.
-        Initial content lives in a hidden <code>&lt;input&gt;</code> that the editor reads and
-        keeps in sync (like Trix). Select text for a formatting bubble; press Enter on an empty
-        line to reveal a (+) button for block insertion. Right-click / long-press opens a context
-        menu. Drop or paste an image file to exercise the upload pipeline. No toolbar by default.
+        Markdown is the source of truth: <code>element.value</code> always matches what you see.
+        The editor never uploads anything itself — uploads, embeds and external images are
+        delegated to <em>your</em> <code>wryte-*</code> listeners, and every change bubbles up as
+        a DOM event.
       </p>
-      <input type="hidden" id="source" name="source" value="## Hello wryte&#10;&#10;This editor is **tag-first**: markdown is the source of truth. Drop an image into the editor to see the upload pipeline below. Hover the hidden text to reveal it: ||spoiler!||&#10;&#10;- [x] typing and formatting work&#10;- [x] uploads are validated and handled by your own `wryte-upload-request` listener&#10;- [x] a URL alone on a line becomes an embed card via `wryte-embed-request`&#10;&#10;https://example.com&#10;&#10;```ts&#10;const editor = document.querySelector(&quot;wryte-editor&quot;).editor&#10;```" />
-      <wryte-editor id="editor" class="editor prose" placeholder="Write something…" input="source"></wryte-editor>
-      <h2>Value (markdown)</h2>
-      <pre id="output" class="output"></pre>
-      <h2>Events</h2>
-      <pre id="log" class="log"></pre>
-      <h2>Restricted editor (abilities whitelist)</h2>
-      <p>
-        This editor is sandboxed with <code>abilities="bold, italic, strike, quote, list"</code>:
-        only those formatting capabilities are enabled, so the bubble, the (+) popup, headings,
-        links, code and embeds are all unavailable.
-      </p>
-      <wryte-editor id="restricted" class="editor prose" abilities="bold, italic, strike, quote, list" placeholder="Plain + bold/italic/strike/quote/list only…" value="**Bold** and *italic* work here."></wryte-editor>
-      <pre id="restricted-output" class="output"></pre>
+
+      <ul class="features">
+        <li>Markdown input rules (<code># </code> <code>&gt; </code> <code>- </code> <code>1. </code>)</li>
+        <li><kbd>⌘B</kbd> <kbd>⌘I</kbd> <kbd>⌘K</kbd> shortcuts</li>
+        <li>Formatting bubble over selections</li>
+        <li>(+) block-insertion menu on empty lines</li>
+        <li>Right-click / long-press context menu</li>
+        <li>Drag &amp; drop and paste for files</li>
+        <li>Embeds &amp; external-image re-hosting</li>
+        <li>Abilities whitelist sandbox</li>
+        <li>Optional toolbar</li>
+      </ul>
+
+      <section class="demo">
+        <h2><span class="step">1</span> Full-featured editor</h2>
+        <p class="caption">
+          No toolbar by default — formatting lives in the selection bubble, the (+) menu and the
+          context menu. Type markdown (try <code># </code>, <code>&gt; </code>, <code>- </code>
+          or a bare URL on an empty line) or drive it from JavaScript with the buttons below.
+        </p>
+
+        <input type="hidden" id="source" name="source" value="## Hello wryte&#10;&#10;This editor is **tag-first**: markdown is the source of truth, so `element.value` and what you see always agree — the *Value* panel below updates on every keystroke.&#10;&#10;Type `# ` for a heading, `> ` for a quote, `- ` for a bullet list, or a bare URL on an empty line to make an embed card. Select text for the formatting bubble; press `Enter` on an empty line for the (+) insertion menu; right-click / long-press for the context menu; drop or paste an image to exercise the upload pipeline.&#10;&#10;- the editor is just an element: a `wryte-editor` with a `value`&#10;- markdown lives in a hidden `input`, Trix-style (`input=&quot;source&quot;`)&#10;- drop or paste an image → `wryte-upload-request` with a progress ring&#10;- hover the hidden text to reveal it: ||spoiler!||&#10;- inline `code`, **bold**, *italic*, ~~strike~~ and [links](https://daringfireball.net/projects/markdown/)&#10;&#10;> Blockquote: markdown stays the single source of truth even for quotes, lists and code.&#10;&#10;1. Headings are clamped to **h2 / h3**&#10;2. Lists, quotes and code blocks all round-trip&#10;3. A URL alone on a line becomes an embed card (below)&#10;&#10;https://example.com&#10;&#10;---&#10;&#10;### Code block&#10;&#10;```ts&#10;const editor = document.querySelector(&quot;wryte-editor&quot;).editor&#10;editor.insertEmbed('https://example.com')&#10;editor.insertString('demo')&#10;```&#10;&#10;![External image: re-hosted via wryte-image-request](https://picsum.photos/seed/wryte/640/360)" />
+        <wryte-editor id="editor" class="editor prose" placeholder="Write something…" input="source"></wryte-editor>
+
+        <div class="panel-grid">
+          <div class="panel">
+            <h3>Markdown value</h3>
+            <p class="panel-note">What <code>element.value</code> returns — live on every change.</p>
+            <pre id="output" class="output"></pre>
+          </div>
+          <div class="panel">
+            <h3>Live state</h3>
+            <p class="panel-note">Selection, active attributes and undo/redo, read straight from the API.</p>
+            <pre id="state" class="state"></pre>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Drive it from JavaScript</h3>
+          <p class="panel-note">
+            These buttons call the same public API the editor exposes — <code>insertString</code>,
+            <code>insertEmbed</code>, <code>insertFile</code>, <code>insertHorizontalRule</code>,
+            <code>toggleAttribute</code>, <code>undo</code>/<code>redo</code> and <code>clear</code>.
+          </p>
+          <div class="api-buttons" id="api"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Events</h3>
+          <p class="panel-note">Everything bubbles as a <code>wryte-*</code> event — the last 12, with a hint of their payload.</p>
+          <pre id="log" class="log"></pre>
+        </div>
+      </section>
+
+      <section class="demo">
+        <h2><span class="step">2</span> With a toolbar</h2>
+        <p class="caption">
+          The same editor, wired to an explicit <code>&lt;wryte-toolbar&gt;</code> element via
+          <code>toolbar="toolbar"</code>. Includes a link dialog (link button or <kbd>⌘K</kbd>) and a
+          file picker that runs the same upload pipeline.
+        </p>
+        <wryte-toolbar id="toolbar" class="toolbar"></wryte-toolbar>
+        <wryte-editor id="toolbar-editor" class="editor prose" toolbar="toolbar" value="## Toolbar demo&#10;&#10;Select some text and try the toolbar above: **bold**, ||spoiler||, or add a [link](https://example.com). The attach button opens a file picker and runs the same upload pipeline.&#10;&#10;- the heading / list buttons cycle the current block&#10;- `⌘K` (or Ctrl+K) opens the link dialog, `Esc` closes it"></wryte-editor>
+        <pre id="toolbar-output" class="output"></pre>
+      </section>
+
+      <section class="demo">
+        <h2><span class="step">3</span> Restricted editor <span class="tag">abilities whitelist</span></h2>
+        <p class="caption">
+          Sandboxed with <code>abilities="bold, italic, strike, quote, list"</code>: only those
+          capabilities are enabled, so headings, links, code, embeds and images are off, and the
+          menus simply omit their buttons.
+        </p>
+        <wryte-editor id="restricted" class="editor prose" abilities="bold, italic, strike, quote, list" placeholder="Plain + bold/italic/strike/quote/list only…" value="**Bold** and *italic* work here."></wryte-editor>
+        <pre id="restricted-output" class="output"></pre>
+      </section>
+
+      <section class="demo">
+        <h2><span class="step">4</span> Placeholder &amp; read-only</h2>
+        <p class="caption">
+          An empty editor shows its placeholder (driven by <code>data-wryte-empty</code>); the
+          second was created with the <code>disabled</code> attribute — its content stays selectable
+          and copyable, but nothing can be typed, dropped or pasted, and the bubble / (+) menus
+          stay hidden.
+        </p>
+        <wryte-editor id="empty" class="editor prose" placeholder="Start typing — this editor was created empty…"></wryte-editor>
+        <wryte-editor id="readonly" class="editor prose stacked" disabled value="## Read-only&#10;&#10;This editor was created with the `disabled` attribute: the content is still selectable and copyable, but nothing can be typed, dropped or pasted, and the bubble / (+) menus stay hidden.&#10;&#10;- click and select — you can copy, but not edit&#10;- `disable()` / `enable()` flip this at runtime"></wryte-editor>
+      </section>
     </main>
     <script type="module" src="/demo/main.ts"></script>
   </body>

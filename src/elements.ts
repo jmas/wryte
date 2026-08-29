@@ -67,7 +67,7 @@ export function registerEditorElement(name = 'wryte-editor'): void {
       const options: EditorOptions = { value: this.#defaultValue }
       if (this.hasAttribute('placeholder')) options.placeholder = this.getAttribute('placeholder') ?? undefined
       if (this.hasAttribute('toolbar')) options.toolbar = this.getAttribute('toolbar') ?? undefined
-      if (this.hasAttribute('autofocus')) options.autofocus = true
+      if (this.autofocus) options.autofocus = true
       if (this.hasAttribute('abilities')) {
         // Comma-separated whitelist, e.g. `abilities="bold, italic, link"`.
         options.abilities = (this.getAttribute('abilities') ?? '')
@@ -78,6 +78,7 @@ export function registerEditorElement(name = 'wryte-editor'): void {
 
       this.#editor = new Editor(this, options)
       if (this.hasAttribute('disabled')) this.#editor.disable()
+      if (this.hasAttribute('readonly')) this.#editor.readonly = true
 
       this.ensureHiddenInput()
       this.addEventListener('wryte-change', this.syncFormValue)
@@ -127,6 +128,29 @@ export function registerEditorElement(name = 'wryte-editor'): void {
         else this.#editor.enable()
       }
       this.syncFormValue()
+    }
+
+    // Read-only mode: the editor stays focusable/selectable/copyable but cannot
+    // be edited. Unlike `disabled` it never suppresses the form value.
+    get readonly(): boolean {
+      return this.hasAttribute('readonly')
+    }
+
+    set readonly(value: boolean) {
+      this.toggleAttribute('readonly', !!value)
+      if (this.#editor) this.#editor.readonly = value
+    }
+
+    // Autofocus honors an explicit "false" value, so `autofocus="false"`
+    // disables it (presence-only semantics would treat that as on).
+    get autofocus(): boolean {
+      return this.getAttribute('autofocus') != null && this.getAttribute('autofocus') !== 'false'
+    }
+
+    set autofocus(value: boolean) {
+      if (value) this.setAttribute('autofocus', '')
+      else this.setAttribute('autofocus', 'false')
+      if (this.#editor && value) this.#editor.focus()
     }
 
     get form(): HTMLFormElement | null {

@@ -116,9 +116,12 @@ describe('attribute gating', () => {
     expect(editor.toMarkdown()).toBe('`a pa`ragraph')
     editor.toggleAttribute('code')
     expect(editor.toMarkdown()).toBe('a paragraph')
-    // A whole-block selection maps `code` to the codeBlock ability (disabled).
+    // A whole-block selection still uses the inline `code` ability; block
+    // code_block is only created from an empty line via `setBlockCode`.
     editor.setSelectedRange([0, 11])
-    expect(editor.canActivateAttribute('code')).toBe(false)
+    expect(editor.canActivateAttribute('code')).toBe(true)
+    editor.toggleAttribute('code')
+    expect(editor.toMarkdown()).toBe('`a paragraph`')
   })
 
   it('cycles the emphasis button only through enabled styles', () => {

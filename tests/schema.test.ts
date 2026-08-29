@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Attachment, Editor } from '../src/index'
+import { isPreviewable } from '../src/schema'
 
 function makeEditor(value = ''): Editor {
   const element = document.createElement('div')
@@ -62,5 +63,65 @@ describe('block images', () => {
     ])
     const types = (editor.getDocument().toJSON() as { content?: { type: string }[] }).content?.map((c) => c.type)
     expect(types).toEqual(['paragraph'])
+  })
+})
+
+describe('schema DOM round-trips', () => {
+  it('clamps HTML headings to H2 and H3', () => {
+    const cases: [string, string][] = [
+      ['<h1>t</h1>', '<h2>t</h2>'],
+      ['<h2>t</h2>', '<h2>t</h2>'],
+      ['<h3>t</h3>', '<h3>t</h3>'],
+      ['<h4>t</h4>', '<h3>t</h3>'],
+      ['<h6>t</h6>', '<h3>t</h3>'],
+    ]
+    for (const [html, expected] of cases) {
+      const editor = makeEditor()
+      editor.loadHTML(html)
+      expect(editor.toHTML()).toBe(expected)
+    }
+  })
+
+  it('round-trips a horizontal rule', () => {
+    const editor = makeEditor()
+    editor.loadHTML('<hr>')
+    expect(editor.toHTML()).toBe('<hr>')
+    expect(editor.toMarkdown()).toBe('---')
+  })
+
+  it('round-trips an inline attachment through a span', () => {
+    const editor = makeEditor()
+    editor.loadHTML('<p>see <span data-wryte-attachment="a1" data-wryte-url="https://e.com/a.pdf">a.pdf</span></p>')
+    const span = editor.element.querySelector('span[data-wryte-attachment]')
+    expect(span).not.toBeNull()
+    // The id is a per-editor concern and does not survive HTML parsing; the
+    // URL and filename do.
+    const html = editor.toHTML()
+    expect(html).toContain('data-wryte-url="https://e.com/a.pdf"')
+    expect(html).toContain('title="a.pdf"')
+  })
+
+  it('parses a link mark with its href and title', () => {
+    const editor = makeEditor()
+    editor.loadHTML('<p><a href="https://e.com" title="The site">text</a></p>')
+    expect(editor.toMarkdown()).toBe('[text](https://e.com "The site")')
+  })
+})
+
+describe('isPreviewable', () => {
+  it('recognizes image content types', () => {
+    expect(isPreviewable('image/png')).toBe(true)
+    expect(isPreviewable('image/jpeg')).toBe(true)
+    expect(isPreviewable('image/gif')).toBe(true)
+    expect(isPreviewable('image/webp')).toBe(true)
+    expect(isPreviewable('image/*')).toBe(true)
+    expect(isPreviewable('image/jpg')).toBe(true)
+  })
+
+  it('rejects non-image content types', () => {
+    expect(isPreviewable('application/pdf')).toBe(false)
+    expect(isPreviewable('text/plain')).toBe(false)
+    expect(isPreviewable(null)).toBe(false)
+    expect(isPreviewable(undefined as unknown as string)).toBe(false)
   })
 })

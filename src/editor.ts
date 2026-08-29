@@ -47,27 +47,32 @@ function injectEditorStyles(): void {
   editorStylesInjected = true
   const style = document.createElement('style')
   style.textContent =
-    '.wryte-spoiler{background:#3f3f46;color:transparent;border-radius:3px;padding:0 1px;transition:color .15s}.wryte-spoiler:hover{color:#fafafa}' +
-    '.wryte-image{position:relative;display:block;max-width:20rem;width:100%;background:#e4e4e7;border-radius:6px;outline:1px solid rgba(0,0,0,.15);outline-offset:-1px;overflow:hidden}' +
+    // Themeable colors. Defaults to a light palette on `:root`; pages can
+    // override these `--wryte-*` variables (e.g. `html[data-theme="dark"]`)
+    // to force a theme. `prefers-color-scheme: dark` flips them automatically.
+    ':root{--wryte-accent:#2563eb;--wryte-accent-contrast:#ffffff;--wryte-surface:#ffffff;--wryte-surface-muted:#f4f4f5;--wryte-placeholder:#e4e4e7;--wryte-border:#e4e4e7;--wryte-border-strong:#d1d5db;--wryte-divider:#e5e7eb;--wryte-text:#18181b;--wryte-text-muted:#71717a;--wryte-hover:#f3f4f6;--wryte-spoiler-bg:#3f3f46;--wryte-spoiler-hover:#fafafa;--wryte-progress-bg:rgba(255,255,255,.45);--wryte-progress-track:#d4d4d8;--wryte-hr:#d4d4d8;--wryte-gapcursor:#000}' +
+    '@media (prefers-color-scheme:dark){:root{--wryte-surface:#27272a;--wryte-surface-muted:#3f3f46;--wryte-placeholder:#3f3f46;--wryte-border:#3f3f46;--wryte-border-strong:#52525b;--wryte-divider:#3f3f46;--wryte-text:#e4e4e7;--wryte-text-muted:#a1a1aa;--wryte-hover:#3f3f46;--wryte-spoiler-hover:#e4e4e7;--wryte-progress-bg:rgba(0,0,0,.45);--wryte-progress-track:#52525b;--wryte-hr:#3f3f46;--wryte-gapcursor:#e4e4e7}}' +
+    '.wryte-spoiler{background:var(--wryte-spoiler-bg);color:transparent;border-radius:3px;padding:0 1px;transition:color .15s}.wryte-spoiler:hover{color:var(--wryte-spoiler-hover)}' +
+    '.wryte-image{position:relative;display:block;max-width:20rem;width:100%;background:var(--wryte-placeholder);border-radius:6px;outline:1px solid rgba(0,0,0,.15);outline-offset:-1px;overflow:hidden}' +
     '.wryte-image img[data-wryte-attachment]{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;object-position:center;margin:0}' +
-    '.wryte-image.wryte-selected{outline:3px solid #2563eb;outline-offset:2px}' +
-    '.wryte-image .wryte-progress{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(255,255,255,.45)}' +
+    '.wryte-image.wryte-selected{outline:3px solid var(--wryte-accent);outline-offset:2px}' +
+    '.wryte-image .wryte-progress{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--wryte-progress-bg)}' +
     '.wryte-image .wryte-progress[hidden]{display:none}' +
     '.wryte-image .wryte-progress svg{width:2.5rem;height:2.5rem;transform:rotate(-90deg)}' +
-    '.wryte-progress-track{fill:none;stroke:#d4d4d8;stroke-width:3}' +
-    '.wryte-progress-bar{fill:none;stroke:#2563eb;stroke-width:3;stroke-linecap:round}' +
-    '.ProseMirror hr{margin:1.5rem 0;height:1px;border:none;background:#d4d4d8}' +
-    '.ProseMirror hr.wryte-selected{background:#2563eb;outline:2px solid #2563eb;outline-offset:2px}' +
-    '.ProseMirror div.wryte-embed{display:flex;align-items:center;gap:12px;box-sizing:border-box;max-width:20rem;width:100%;border:1px solid #e4e4e7;border-radius:8px;padding:10px;background:#ffffff;color:#18181b;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}' +
-    '.ProseMirror .wryte-embed-image{width:3rem;height:3rem;aspect-ratio:1/1;object-fit:cover;border-radius:6px;background:#f4f4f5;flex-shrink:0;margin:0}' +
+    '.wryte-progress-track{fill:none;stroke:var(--wryte-progress-track);stroke-width:3}' +
+    '.wryte-progress-bar{fill:none;stroke:var(--wryte-accent);stroke-width:3;stroke-linecap:round}' +
+    '.ProseMirror hr{margin:1.5rem 0;height:1px;border:none;background:var(--wryte-hr)}' +
+    '.ProseMirror hr.wryte-selected{background:var(--wryte-accent);outline:2px solid var(--wryte-accent);outline-offset:2px}' +
+    '.ProseMirror div.wryte-embed{display:flex;align-items:center;gap:12px;box-sizing:border-box;max-width:20rem;width:100%;border:1px solid var(--wryte-border);border-radius:8px;padding:10px;background:var(--wryte-surface);color:var(--wryte-text);font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}' +
+    '.ProseMirror .wryte-embed-image{width:3rem;height:3rem;aspect-ratio:1/1;object-fit:cover;border-radius:6px;background:var(--wryte-surface-muted);flex-shrink:0;margin:0}' +
     '.ProseMirror .wryte-embed-title{font-size:13px;font-weight:600;line-height:1.35;word-break:break-word;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}' +
-    '.ProseMirror .wryte-embed-host{font-size:12px;color:#71717a;word-break:break-all;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.ProseMirror .wryte-embed-host{font-size:12px;color:var(--wryte-text-muted);word-break:break-all;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.ProseMirror .wryte-embed-body{display:flex;flex-direction:column;min-width:0;gap:2px}' +
-    '.ProseMirror div.wryte-embed.wryte-selected{outline:3px solid #2563eb;outline-offset:2px}' +
-    'div.wryte-embed.wryte-selected{outline:3px solid #2563eb;outline-offset:2px}' +
+    '.ProseMirror div.wryte-embed.wryte-selected{outline:3px solid var(--wryte-accent);outline-offset:2px}' +
+    'div.wryte-embed.wryte-selected{outline:3px solid var(--wryte-accent);outline-offset:2px}' +
     '.ProseMirror .wryte-image + .wryte-image,.ProseMirror .wryte-image + .wryte-embed,.ProseMirror .wryte-embed + .wryte-image,.ProseMirror .wryte-embed + .wryte-embed{margin-top:1rem}' +
     '.ProseMirror > .wryte-image:has(+ .ProseMirror-gapcursor),.ProseMirror > .wryte-embed:has(+ .ProseMirror-gapcursor),.ProseMirror > hr:has(+ .ProseMirror-gapcursor){margin-bottom:1.5rem}' +
-    '.ProseMirror-gapcursor{position:absolute;pointer-events:none;width:0!important;height:0!important;overflow:hidden;display:none}.ProseMirror-focused .ProseMirror-gapcursor{display:block}.ProseMirror-gapcursor:after{content:"";display:block;position:absolute;top:-2px;width:20px;border-top:1px solid #000;animation:ProseMirror-cursor-blink 1.1s steps(2,start) infinite}@keyframes ProseMirror-cursor-blink{to{visibility:hidden}}' +
+    '.ProseMirror-gapcursor{position:absolute;pointer-events:none;width:0!important;height:0!important;overflow:hidden;display:none}.ProseMirror-focused .ProseMirror-gapcursor{display:block}.ProseMirror-gapcursor:after{content:"";display:block;position:absolute;top:-2px;width:20px;border-top:1px solid var(--wryte-gapcursor);animation:ProseMirror-cursor-blink 1.1s steps(2,start) infinite}@keyframes ProseMirror-cursor-blink{to{visibility:hidden}}' +
     'img.ProseMirror-separator{display:inline-block!important;width:0!important;height:0!important;opacity:0;border:0!important;margin:0!important;padding:0!important;overflow:hidden}' +
     '.ProseMirror p:has(br.ProseMirror-trailingBreak:last-child):has(> a:first-child > [data-wryte-attachment]:first-child, > [data-wryte-attachment]:first-child){line-height:0}'
   document.head.appendChild(style)
@@ -158,6 +163,12 @@ export interface EditorOptions {
   value?: string
   html?: string
   editable?: boolean
+  // Read-only mode: the view stays focusable, selectable and copyable but
+  // nothing can be typed or formatted. Distinct from `editable: false` only in
+  // intent — both make the view non-editable; `readonly` is reflected by the
+  // `readonly` attribute on `<wryte-editor>` and never suppresses form value
+  // submission (unlike `disabled`).
+  readonly?: boolean
   // Whitelist of allowed capabilities. `undefined`/`null` enables everything;
   // an array restricts the editor to exactly those abilities.
   abilities?: Ability[]
@@ -173,6 +184,7 @@ export interface EditorConfig {
   contextMenu: boolean
   uploadTimeout: number | null
   editable: boolean
+  readonly: boolean
   abilities: Ability[] | null
 }
 
@@ -186,6 +198,7 @@ export const config: EditorConfig = {
   contextMenu: true,
   uploadTimeout: null,
   editable: true,
+  readonly: false,
   abilities: null,
 }
 
@@ -401,7 +414,7 @@ export class Editor implements AttachmentDelegate {
     this.view = new EditorView(element, {
       state: this.createState(),
       dispatchTransaction: (tr) => this.handleTransaction(tr),
-      editable: () => this.options.editable !== false,
+      editable: () => this.options.editable !== false && this.options.readonly !== true,
       nodeViews: {
         image: (node) => {
           const id = node.attrs.id as string | null
@@ -714,7 +727,6 @@ export class Editor implements AttachmentDelegate {
 
   private codeAttributeActive(state: EditorState): boolean {
     if (this.currentBlockAttribute(state) === 'code') return true
-    if (this.selectionCoversWholeBlocks(state)) return false
     return markIsActive(state, codeMark)
   }
 
@@ -1184,8 +1196,8 @@ export class Editor implements AttachmentDelegate {
     return abilities == null || abilities.includes(ability)
   }
 
-  // The ability behind a Trix-style attribute name. `code` is ambiguous (inline
-  // mark vs. block code_block), so its ability depends on the selection.
+  // The ability behind a Trix-style attribute name. `code` always refers to the
+  // inline code mark; the block code_block is only reachable via `setBlockCode`.
   private attributeAllowed(name: string): boolean {
     switch (name) {
       case 'bold':
@@ -1204,7 +1216,6 @@ export class Editor implements AttachmentDelegate {
       case 'number':
         return this.abilityEnabled('list')
       case 'code':
-        if (this.selectionCoversWholeBlocks(this.view.state)) return this.abilityEnabled('codeBlock')
         return this.abilityEnabled('code')
       default:
         return /^heading[1-6]$/.test(name) ? this.abilityEnabled('heading') : true
@@ -1213,12 +1224,6 @@ export class Editor implements AttachmentDelegate {
 
   canActivateAttribute(name: string): boolean {
     if (!this.attributeAllowed(name)) return false
-    if (name === 'code') {
-      const state = this.view.state
-      if (!this.selectionCoversWholeBlocks(state)) return true
-      const current = this.currentBlockAttribute(state)
-      return current !== 'code' && current !== 'quote'
-    }
     if (this.markTypeForAttribute(name)) return true
     if (!this.blockAttributeNodeType(name)) return false
     const current = this.currentBlockAttribute(this.view.state)
@@ -1239,11 +1244,7 @@ export class Editor implements AttachmentDelegate {
   activateAttribute(name: string, value: boolean | string = true): void {
     if (!this.attributeAllowed(name)) return
     if (name === 'code') {
-      if (this.selectionCoversWholeBlocks(this.view.state)) {
-        this.runCommand((state, dispatch) => this.codeBlockFromSelection(state, dispatch))
-      } else if (!markIsActive(this.view.state, codeMark)) {
-        this.runCommand(toggleMark(codeMark))
-      }
+      if (!markIsActive(this.view.state, codeMark)) this.runCommand(toggleMark(codeMark))
       return
     }
 
@@ -1343,8 +1344,9 @@ export class Editor implements AttachmentDelegate {
   }
 
   // Cycles the code/spoiler button through the *enabled* subset of
-  // spoiler -> code -> none. `code` may resolve to the inline mark or the block
-  // code_block (whole-block selections), so it is enabled by either ability.
+  // spoiler -> code -> none. `code` is always the inline mark — the block
+  // code_block is only created from an empty line via `setBlockCode` — so the
+  // button stays available when either ability is on.
   private cycleCodeSpoiler(): void {
     const canSpoiler = this.abilityEnabled('spoiler')
     const canCode = this.abilityEnabled('code') || this.abilityEnabled('codeBlock')
@@ -1701,6 +1703,18 @@ export class Editor implements AttachmentDelegate {
 
   enable(): void {
     this.options.editable = true
+    this.view.updateState(this.view.state)
+  }
+
+  // True when the editor currently cannot be edited: the `readonly` config is
+  // on, or the editor was disabled (`disable()` / `editable: false`). The view
+  // stays focusable, selectable and copyable — only editing is suppressed.
+  get readonly(): boolean {
+    return this.options.readonly === true || this.options.editable === false
+  }
+
+  set readonly(value: boolean) {
+    this.options.readonly = value
     this.view.updateState(this.view.state)
   }
 

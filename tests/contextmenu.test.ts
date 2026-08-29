@@ -153,6 +153,19 @@ describe('bubble menu', () => {
     expect(button.classList.contains('is-active')).toBe(false)
   })
 
+  it('applies inline code, not a code block, over a whole-paragraph selection', () => {
+    const editor = makeEditor('a paragraph')
+    editor.setSelectedRange([0, 11])
+    rightClick(editor.element)
+
+    const button = menu()!.querySelector('[data-wryte-attribute="code"]') as HTMLButtonElement
+    // The cycle starts at spoiler; two presses reach the code step.
+    button.click()
+    button.click()
+    expect(editor.toMarkdown()).toBe('`a paragraph`')
+    expect(editor.attributeIsActive('code')).toBe(true)
+  })
+
   it('toggles block attributes from the bubble and keeps it open', () => {
     const editor = makeEditor('a paragraph')
     editor.setSelectedRange([0, 10])

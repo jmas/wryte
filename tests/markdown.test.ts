@@ -80,4 +80,40 @@ describe('markdown scope (Trix-limited)', () => {
     const doc = markdownParser.parse('<b>raw</b>')
     expect(doc?.textContent).toBe('<b>raw</b>')
   })
+
+  it('round-trips horizontal rules', () => {
+    expect(roundTrip('---')).toBe('---')
+    expect(roundTrip('***')).toBe('---')
+  })
+
+  it('round-trips code blocks without a language', () => {
+    expect(roundTrip('```\nfoo\n```')).toBe('```\nfoo\n```')
+  })
+
+  it('round-trips loose lists with blank lines', () => {
+    expect(roundTrip('- one\n\n- two')).toBe('* one\n\n* two')
+  })
+
+  it('round-trips nested lists', () => {
+    expect(roundTrip('- one\n  - sub')).toBe('* one\n  * sub')
+  })
+
+  it('keeps an image inside a list item as a block', () => {
+    expect(roundTrip('- ![alt](https://example.com/a.png)')).toBe('* ![alt](https://example.com/a.png)')
+  })
+
+  it('degrades an image inside a blockquote to its alt text', () => {
+    expect(roundTrip('> ![alt](https://example.com/a.png)')).toBe('> alt')
+  })
+
+  it('preserves a link title', () => {
+    expect(roundTrip('[text](https://example.com "Title")')).toBe('[text](https://example.com "Title")')
+  })
+
+  it('preserves parentheses inside a link URL', () => {
+    const doc = markdownParser.parse('[text](https://example.com/a_(b).png)')
+    const text = doc?.child(0).child(0)
+    expect(text?.marks[0]?.type.name).toBe('link')
+    expect(text?.marks[0]?.attrs.href).toBe('https://example.com/a_(b).png')
+  })
 })

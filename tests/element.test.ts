@@ -83,6 +83,30 @@ describe('wryte-editor custom element', () => {
     expect(element.hasAttribute('data-wryte-empty')).toBe(true)
   })
 
+  it('autofocuses when the autofocus attribute is present', () => {
+    const wrapper = makeElement('<wryte-editor autofocus></wryte-editor>')
+    const element = wrapper.querySelector('wryte-editor')! as unknown as { autofocus: boolean; editor: Editor }
+    expect(element.autofocus).toBe(true)
+    expect(element.editor.options.autofocus).toBe(true)
+  })
+
+  it('honors autofocus="false" as disabled', () => {
+    const wrapper = makeElement('<wryte-editor autofocus="false"></wryte-editor>')
+    const element = wrapper.querySelector('wryte-editor')! as unknown as { autofocus: boolean; editor: Editor }
+    expect(element.autofocus).toBe(false)
+    expect(element.editor.options.autofocus).toBe(false)
+  })
+
+  it('reflects the autofocus property to the attribute', () => {
+    const wrapper = makeElement()
+    const element = wrapper.querySelector('wryte-editor')! as unknown as { autofocus: boolean }
+    expect(element.autofocus).toBe(false)
+    element.autofocus = true
+    expect(element.autofocus).toBe(true)
+    element.autofocus = false
+    expect(element.autofocus).toBe(false)
+  })
+
   it('supports disable/enable via the disabled attribute', () => {
     const wrapper = makeElement('<wryte-editor disabled></wryte-editor>')
     const element = wrapper.querySelector('wryte-editor')! as unknown as { disabled: boolean; editor: Editor }
@@ -90,6 +114,28 @@ describe('wryte-editor custom element', () => {
     expect(element.editor.options.editable).toBe(false)
     element.disabled = false
     expect(element.editor.options.editable).toBe(true)
+  })
+
+  it('supports readonly via the readonly attribute', () => {
+    const wrapper = makeElement('<wryte-editor readonly></wryte-editor>')
+    const element = wrapper.querySelector('wryte-editor')! as unknown as { readonly: boolean; editor: Editor }
+    expect(element.readonly).toBe(true)
+    expect(element.editor.readonly).toBe(true)
+    expect(element.editor.editorView.editable).toBe(false)
+    // Read-only never touches the editable flag (unlike disabled).
+    expect(element.editor.options.editable).toBe(true)
+  })
+
+  it('reflects the readonly property to the attribute', () => {
+    const wrapper = makeElement()
+    const element = wrapper.querySelector('wryte-editor')! as unknown as HTMLElement & { readonly: boolean; editor: Editor }
+    expect(element.readonly).toBe(false)
+    element.readonly = true
+    expect(element.hasAttribute('readonly')).toBe(true)
+    expect(element.editor.editorView.editable).toBe(false)
+    element.readonly = false
+    expect(element.hasAttribute('readonly')).toBe(false)
+    expect(element.editor.editorView.editable).toBe(true)
   })
 
   it('initializes from an input element and syncs back to it', () => {
@@ -128,6 +174,37 @@ describe('wryte-editor custom element', () => {
     const wrapper = makeElement('<wryte-editor abilities="bold, underline, nope"></wryte-editor>')
     const editor = (wrapper.querySelector('wryte-editor')! as unknown as { editor: Editor }).editor
     expect(editor.options.abilities).toEqual(['bold'])
+  })
+})
+
+describe('value accessor and form fallback', () => {
+  it('does not shadow an element that already exposes a value accessor', () => {
+    class MyEditor extends HTMLElement {
+      get value(): string {
+        return 'prototype-value'
+      }
+    }
+    customElements.define('test-value-accessor', MyEditor)
+    const element = document.createElement('test-value-accessor')
+    const editor = new Editor(element, { toolbar: false, value: 'content' })
+    expect((element as unknown as { value: string }).value).toBe('prototype-value')
+    expect(editor.toMarkdown()).toBe('content')
+  })
+
+  it('mirrors the value into a hidden input inside the form (fallback wiring)', () => {
+    const form = document.createElement('form')
+    form.innerHTML = '<wryte-editor name="content" value="# Hi"></wryte-editor>'
+    document.body.appendChild(form)
+    const element = form.querySelector('wryte-editor')!
+    const hidden = form.querySelector('input[type="hidden"][name="content"]') as HTMLInputElement
+    expect(hidden).not.toBeNull()
+    expect(hidden.value).toBe('## Hi')
+    const editor = (element as unknown as { editor: Editor }).editor
+    const end = editor.toMarkdown().length
+    editor.setSelectedRange([end, end])
+    editor.insertString('!')
+    expect(hidden.value).toBe('## Hi!')
+    form.remove()
   })
 })
 

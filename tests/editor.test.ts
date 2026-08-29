@@ -1,6 +1,8 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { NodeSelection, TextSelection } from 'prosemirror-state'
+import { GapCursor } from 'prosemirror-gapcursor'
 import { Editor, config, registerElement, Wryte, schema } from '../src/index'
+import type { UploadSuccessResult } from '../src/index'
 
 function makeEditor(value = '', options: Record<string, unknown> = {}): Editor {
   const element = document.createElement('div')
@@ -39,6 +41,7 @@ describe('exports', () => {
       contextMenu: true,
       uploadTimeout: null,
       editable: true,
+      readonly: false,
       abilities: null,
     })
     expect(registerElement).toBeTypeOf('function')
@@ -291,19 +294,19 @@ describe('Editor', () => {
   })
 
   describe('code attribute', () => {
-    it('applies block code to a fully selected paragraph', () => {
+    it('applies inline code to a fully selected paragraph', () => {
       editor.loadMarkdown('const x = 1')
       editor.setSelectedRange([0, 11])
       editor.activateAttribute('code')
-      expect(editor.toMarkdown()).toBe('```\nconst x = 1\n```')
+      expect(editor.toMarkdown()).toBe('`const x = 1`')
       expect(editor.attributeIsActive('code')).toBe(true)
     })
 
-    it('applies block code to multiple fully selected paragraphs', () => {
+    it('applies inline code to multiple fully selected paragraphs', () => {
       editor.loadMarkdown('first\n\nsecond')
       editor.setSelectedRange([0, 12])
       editor.activateAttribute('code')
-      expect(editor.toMarkdown()).toBe('```\nfirst\nsecond\n```')
+      expect(editor.toMarkdown()).toBe('`first`\n\n`second`')
     })
 
     it('applies inline code to a partial text selection', () => {
@@ -324,10 +327,11 @@ describe('Editor', () => {
       expect(editor.toMarkdown()).toBe('`code`text')
     })
 
-    it('deactivates whole-block code back to a paragraph', () => {
+    it('deactivates a code block back to a paragraph', () => {
       editor.loadMarkdown('const x = 1')
-      editor.setSelectedRange([0, 11])
-      editor.activateAttribute('code')
+      editor.setSelectedRange([0, 0])
+      editor.setBlockCode()
+      expect(editor.toMarkdown()).toBe('```\nconst x = 1\n```')
       editor.deactivateAttribute('code')
       expect(editor.toMarkdown()).toBe('const x = 1')
     })
@@ -403,12 +407,12 @@ describe('Editor', () => {
       expect(editor.toMarkdown()).toBe('* one')
     })
 
-    it('cannot create block code inside a blockquote', () => {
+    it('applies inline code inside a blockquote', () => {
       editor.loadMarkdown('> quoted')
       editor.setSelectedRange([0, 7])
+      expect(editor.canActivateAttribute('code')).toBe(true)
       editor.activateAttribute('code')
-      expect(editor.toMarkdown()).toBe('> quoted')
-      expect(editor.canActivateAttribute('code')).toBe(false)
+      expect(editor.toMarkdown()).toBe('> `quoted`')
     })
 
     it('disables heading activation inside a blockquote', () => {
@@ -636,5 +640,212 @@ describe('selection highlight', () => {
     const span = editor.element.querySelector('span[data-wryte-attachment]') as HTMLElement
     selectRange(editor, 1, editor.getDocument().content.size)
     expect(span.classList.contains('wryte-selected')).toBe(false)
+  })
+})
+
+describe('insertion methods', () => {
+  it('inserts text with insertText', () => {
+    const editor = makeEditor('')
+    editor.setSelectedRange([0, 0])
+    editor.insertText('hi')
+    expect(editor.toMarkdown()).toBe('hi')
+  })
+
+  it('inserts HTML at the caret', () => {
+    const editor = makeEditor('')
+    editor.insertHTML('<p>a <strong>b</strong></p>')
+    expect(editor.toMarkdown()).toBe('a **b**')
+  })
+
+  it('inserts a line break', () => {
+    const editor = makeEditor('hello')
+    editor.setSelectedRange([2, 2])
+    editor.insertLineBreak()
+    expect(editor.toMarkdown()).toBe('he\n\nllo')
+  })
+
+  it('inserts a document at the caret', () => {
+    const editor = makeEditor('')
+    const doc = schema.nodeFromJSON({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'inserted' }] }],
+    })
+    editor.insertDocument(doc)
+    expect(editor.toMarkdown()).toBe('inserted')
+  })
+})
+
+describe('cursor movement', () => {
+  it('reports the caret position as a text offset', () => {
+    const editor = makeEditor('hello world')
+    editor.setSelectedRange([6, 6])
+    expect(editor.getPosition()).toBe(6)
+  })
+
+  it('delegates to coordsAtPos for a valid position', () => {
+    const editor = makeEditor('hi')
+    // jsdom has no layout, so stub coordsAtPos to observe the delegation.
+    editor.editorView.coordsAtPos = () => ({ left: 1, right: 2, top: 3, bottom: 4 })
+    expect(editor.getClientRectAtPosition(0)).toEqual({ left: 1, right: 2, top: 3, bottom: 4 })
+  })
+
+  it('moves the cursor in direction', () => {
+    const editor = makeEditor('abc')
+    editor.setSelectedRange([0, 0])
+    editor.moveCursorInDirection('forward')
+    expect(editor.getPosition()).toBe(1)
+    editor.moveCursorInDirection('backward')
+    expect(editor.getPosition()).toBe(0)
+  })
+
+  it('expands the selection in direction', () => {
+    const editor = makeEditor('abc')
+    editor.setSelectedRange([0, 0])
+    editor.expandSelectionInDirection('forward')
+    expect(editor.getSelectedRange()).toEqual([0, 1])
+    editor.expandSelectionInDirection('forward')
+    expect(editor.getSelectedRange()).toEqual([0, 2])
+  })
+
+  it('moves the cursor across a block image', () => {
+    const editor = makeEditor()
+    editor.loadHTML('<p>aa</p><img src="x.png"><p>bb</p>')
+    editor.setSelectedRange([2, 2])
+    editor.moveCursorInDirection('forward')
+    expect(editor.editorView.state.selection.from).toBe(5)
+  })
+
+  it('deletes text in direction', () => {
+    const editor = makeEditor('abc')
+    editor.setSelectedRange([1, 1])
+    editor.deleteInDirection('backward')
+    expect(editor.toMarkdown()).toBe('bc')
+    editor.setSelectedRange([1, 1])
+    editor.deleteInDirection('forward')
+    expect(editor.toMarkdown()).toBe('b')
+  })
+
+  it('deletes a selection with deleteInDirection', () => {
+    const editor = makeEditor('abc')
+    editor.setSelectedRange([0, 2])
+    editor.deleteInDirection('forward')
+    expect(editor.toMarkdown()).toBe('c')
+  })
+})
+
+describe('nesting', () => {
+  it('sinks and lifts list items', () => {
+    const editor = makeEditor('- one\n- two')
+    editor.setSelectedRange([6, 6])
+    expect(editor.canIncreaseNestingLevel()).toBe(true)
+    editor.increaseNestingLevel()
+    expect(editor.toMarkdown()).toBe('* one\n  * two')
+    expect(editor.canDecreaseNestingLevel()).toBe(true)
+    editor.decreaseNestingLevel()
+    expect(editor.toMarkdown()).toBe('* one\n* two')
+  })
+
+  it('reports when nesting is impossible', () => {
+    const editor = makeEditor('plain text')
+    editor.setSelectedRange([0, 0])
+    expect(editor.canIncreaseNestingLevel()).toBe(false)
+    expect(editor.canDecreaseNestingLevel()).toBe(false)
+  })
+})
+
+describe('editor state and convenience methods', () => {
+  it('disables and enables editing', () => {
+    const editor = makeEditor('text')
+    expect(editor.editorView.editable).toBe(true)
+    expect(editor.readonly).toBe(false)
+    editor.disable()
+    expect(editor.options.editable).toBe(false)
+    expect(editor.editorView.editable).toBe(false)
+    expect(editor.readonly).toBe(true)
+    editor.enable()
+    expect(editor.options.editable).toBe(true)
+    expect(editor.editorView.editable).toBe(true)
+    expect(editor.readonly).toBe(false)
+  })
+
+  it('starts read-only from the readonly option', () => {
+    const editor = makeEditor('text', { readonly: true })
+    expect(editor.readonly).toBe(true)
+    expect(editor.editorView.editable).toBe(false)
+    expect(editor.options.editable).toBe(true)
+  })
+
+  it('toggles read-only via the readonly property', () => {
+    const editor = makeEditor('text')
+    expect(editor.editorView.editable).toBe(true)
+    editor.readonly = true
+    expect(editor.options.readonly).toBe(true)
+    expect(editor.editorView.editable).toBe(false)
+    expect(editor.readonly).toBe(true)
+    editor.readonly = false
+    expect(editor.options.readonly).toBe(false)
+    expect(editor.editorView.editable).toBe(true)
+    expect(editor.readonly).toBe(false)
+  })
+
+  it('dispatches wryte events on the element', () => {
+    const editor = makeEditor()
+    const seen: string[] = []
+    editor.element.addEventListener('wryte-render', () => seen.push('render'))
+    const event = editor.dispatch('wryte-render', { editor })
+    expect(seen).toEqual(['render'])
+    expect(event.detail.editor).toBe(editor)
+  })
+
+  it('reports the attachments in the document', () => {
+    const editor = makeEditor('')
+    editor.element.addEventListener('wryte-upload-request', (event) => {
+      const detail = (event as CustomEvent).detail as { respond: (r: UploadSuccessResult) => void }
+      detail.respond({ url: 'https://cdn.example.com/a.png' })
+    })
+    editor.insertFiles([new File(['x'], 'a.png', { type: 'image/png' })])
+    expect(editor.attachments).toHaveLength(1)
+    expect(editor.getAttachments()[0].getFilename()).toBe('a.png')
+  })
+
+  it('resets the undo history on loadDocument', () => {
+    const editor = makeEditor('')
+    editor.insertString('first')
+    editor.loadDocument(schema.nodeFromJSON({ type: 'doc', content: [{ type: 'paragraph' }] }))
+    expect(editor.canUndo()).toBe(false)
+    expect(editor.toMarkdown()).toBe('')
+  })
+
+  it('restores the selected range from loadJSON', () => {
+    const editor = makeEditor('')
+    editor.loadJSON({
+      document: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'abc' }] }] },
+      selectedRange: [1, 2],
+    })
+    expect(editor.getSelectedRange()).toEqual([1, 2])
+  })
+
+  it('unlinks selected text directly', () => {
+    const editor = makeEditor('[linked](https://example.com)')
+    editor.setSelectedRange([0, 6])
+    expect(editor.attributeIsActive('href')).toBe(true)
+    editor.unlink()
+    expect(editor.toMarkdown()).toBe('linked')
+  })
+})
+
+describe('gapcursor', () => {
+  it('renders a gap cursor for a valid gap next to a block image', () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const editor = new Editor(element, { toolbar: false })
+    editor.loadHTML('<img src="x.png"><p>bb</p>')
+    const { state } = editor.editorView
+    // The document start is a valid gap position before the block image.
+    editor.editorView.dispatch(state.tr.setSelection(new GapCursor(state.doc.resolve(0))))
+    expect(editor.editorView.state.selection).toBeInstanceOf(GapCursor)
+    const cursor = editor.element.querySelector('.ProseMirror-gapcursor')
+    expect(cursor).not.toBeNull()
+    element.remove()
   })
 })
