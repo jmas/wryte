@@ -9,6 +9,7 @@
 - `npm test` / `npm run test:watch` — Vitest (jsdom environment), tests in `tests/**/*.test.ts`.
 - `npm run typecheck` — `tsc --noEmit` over `src`, `demo`, `tests`, configs. `noUnusedParameters`/`noUnusedLocals` are on.
 - `npm run build` — `tsc --noEmit && vite build` (generates `dist/`). **Always run this before publishing.**
+- `npm run build:demo` — static build of the preview page (root `index.html` + `demo/`) into `dist-demo/`, deployed to GitHub Pages by `.github/workflows/pages.yml` on push to `main`. The `vite.demo.config.ts` config sets `base: './'` so the site works under the `/wryte/` project-page subpath.
 - `npm run changeset` — add a changeset for the next release.
 
 ## Architecture
