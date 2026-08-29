@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wryte — preview</title>
+    <link rel="stylesheet" href="/demo/style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>wryte</h1>
+      <p>
+        A tag-first (markdown) rich text editor with a Trix-compatible API, built on ProseMirror.
+        Initial content lives in a hidden <code>&lt;input&gt;</code> that the editor reads and
+        keeps in sync (like Trix). Select text for a formatting bubble; press Enter on an empty
+        line to reveal a (+) button for block insertion. Right-click / long-press opens a context
+        menu. Drop or paste an image file to exercise the upload pipeline. No toolbar by default.
+      </p>
+      <input type="hidden" id="source" name="source" value="## Hello wryte&#10;&#10;This editor is **tag-first**: markdown is the source of truth. Drop an image into the editor to see the upload pipeline below. Hover the hidden text to reveal it: ||spoiler!||&#10;&#10;- [x] typing and formatting work&#10;- [x] uploads are validated and handled by your own `wryte-upload-request` listener&#10;- [x] a URL alone on a line becomes an embed card via `wryte-embed-request`&#10;&#10;https://example.com&#10;&#10;```ts&#10;const editor = document.querySelector(&quot;wryte-editor&quot;).editor&#10;```" />
+      <wryte-editor id="editor" class="editor prose" placeholder="Write something…" input="source"></wryte-editor>
+      <h2>Value (markdown)</h2>
+      <pre id="output" class="output"></pre>
+      <h2>Events</h2>
+      <pre id="log" class="log"></pre>
+    </main>
+    <script type="module" src="/demo/main.ts"></script>
+  </body>
+</html>

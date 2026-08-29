@@ -1,0 +1,744 @@
+import { NodeSelection, TextSelection, type EditorState } from 'prosemirror-state'
+import type { Editor } from './editor'
+import { iconMarkup, type IconName } from './icons'
+
+const LABELS: Record<string, string> = {
+  bold: 'Bold',
+  italic: 'Italic',
+  strike: 'Strikethrough',
+  spoiler: 'Spoiler',
+  code: 'Code block',
+  link: 'Link',
+  heading2: 'Heading 2',
+  quote: 'Quote',
+  bullet: 'Bulleted list',
+  number: 'Numbered list',
+  attach: 'Insert attachment',
+  hr: 'Horizontal rule',
+}
+
+// The emphasis button (bold -> italic -> strike) and the code/spoiler button
+// cycle like the heading button, so each is a single toggle-style button.
+const TEXT_ATTRIBUTES: IconName[] = ['bold', 'code']
+const BLOCK_ATTRIBUTES: IconName[] = ['heading2', 'quote', 'bullet']
+
+let stylesInjected = false
+
+function ensureStyles(): void {
+  if (stylesInjected) return
+  stylesInjected = true
+  const style = document.createElement('style')
+  style.textContent = `
+.wryte-context-menu {
+  position: fixed;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  padding: 4px;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.wryte-context-item {
+  font: inherit;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #1d1d1f;
+}
+.wryte-context-item--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border-radius: 4px;
+}
+.wryte-context-item--icon svg {
+  display: block;
+}
+.wryte-context-item:hover,
+.wryte-context-item:focus-visible {
+  background: #f3f4f6;
+  outline: none;
+}
+.wryte-context-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.wryte-context-item--icon.is-active {
+  background: #2563eb;
+  color: #ffffff;
+}
+.wryte-context-item--icon.is-active:hover:not(:disabled) {
+  background: #2563eb;
+}
+.wryte-context-divider {
+  width: 1px;
+  height: 20px;
+  background: #e5e7eb;
+  margin: 0 4px;
+}
+.wryte-context-menu--link {
+  border-radius: 8px;
+  gap: 4px;
+  padding: 6px;
+}
+.wryte-context-link-input {
+  flex: 1;
+  min-width: 180px;
+  font: inherit;
+  padding: 4px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+}
+.wryte-plus-button {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #6b7280;
+  cursor: pointer;
+  z-index: 10;
+}
+.wryte-plus-button:hover {
+  color: #2563eb;
+  border-color: #2563eb;
+}`
+  document.head.appendChild(style)
+}
+
+type MenuMode = 'format' | 'block'
+type Anchor = 'selection' | 'pointer' | 'block'
+
+interface Rect {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+// Formatting UI that follows the editor:
+// - text selected  -> formatting bubble above the selection
+// - caret in an empty line -> inline (+) button on the right of the line;
+//   clicking it opens a block-insertion popup (attachment, code, quote,
+//   heading, lists)
+// - right-click / long-press -> context menu at the pointer
+export class ContextMenuController {
+  private menu: HTMLElement | null = null
+  private anchor: Anchor | null = null
+  private plusButton: HTMLButtonElement | null = null
+  private fileInput: HTMLInputElement | null = null
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null
+  private longPressOrigin: { x: number; y: number } | null = null
+  private lastOpen = 0
+
+  constructor(private editor: Editor) {
+    ensureStyles()
+
+    this.fileInput = document.createElement('input')
+    this.fileInput.type = 'file'
+    this.fileInput.multiple = true
+    this.fileInput.hidden = true
+    this.fileInput.addEventListener('change', this.handleFiles)
+    editor.element.appendChild(this.fileInput)
+
+    const element = editor.element
+    element.addEventListener('contextmenu', this.handleContextMenu)
+    element.addEventListener('pointerdown', this.handlePointerDown)
+    element.addEventListener('pointermove', this.handlePointerMove)
+    element.addEventListener('pointerup', this.handlePointerEnd)
+    element.addEventListener('pointercancel', this.handlePointerEnd)
+    element.addEventListener('wryte-selection-change', this.handleSelectionChange)
+    element.addEventListener('wryte-focus', this.handleFocus)
+    element.addEventListener('focusout', this.handleFocusOut)
+  }
+
+  destroy(): void {
+    this.close()
+    this.hidePlusButton()
+    this.plusButton?.remove()
+    this.plusButton = null
+    this.fileInput?.remove()
+    this.fileInput = null
+    const element = this.editor.element
+    element.removeEventListener('contextmenu', this.handleContextMenu)
+    element.removeEventListener('pointerdown', this.handlePointerDown)
+    element.removeEventListener('pointermove', this.handlePointerMove)
+    element.removeEventListener('pointerup', this.handlePointerEnd)
+    element.removeEventListener('pointercancel', this.handlePointerEnd)
+    element.removeEventListener('wryte-selection-change', this.handleSelectionChange)
+    element.removeEventListener('wryte-focus', this.handleFocus)
+    element.removeEventListener('focusout', this.handleFocusOut)
+  }
+
+  // --- Selection-driven behavior ---
+
+  private handleFocus = (): void => {
+    this.handleSelectionChange()
+  }
+
+  private handleFocusOut = (event: FocusEvent): void => {
+    // The link form gives its input focus, which blurs the editor and fires
+    // this handler. Keep the menu open while focus moves inside it (the input
+    // or its apply/remove buttons) or the form closes the moment it opens.
+    const related = event.relatedTarget
+    if (related instanceof Node && this.menu?.contains(related)) return
+    this.hidePlusButton()
+    this.close()
+  }
+
+  private handleSelectionChange = (): void => {
+    if (this.anchor === 'pointer' || this.anchor === 'block') return
+    if (!this.editorFocused() || this.editor.options.editable === false) {
+      this.hidePlusButton()
+      this.close()
+      return
+    }
+    const state = this.editor.editorView.state
+
+    // A block-node selection (image, horizontal rule) is a whole element, not
+    // inline text, so the formatting bubble is pointless there — never open it.
+    if (state.selection instanceof NodeSelection && state.selection.node.isBlock) {
+      this.hidePlusButton()
+      this.close()
+      return
+    }
+
+    if (!state.selection.empty) {
+      this.hidePlusButton()
+      if (this.menu && this.anchor === 'selection') {
+        this.repositionFromSelection()
+        this.refreshActiveStates()
+      } else {
+        this.openSelectionBubble()
+      }
+      return
+    }
+
+    if (this.caretInEmptyBlock(state)) {
+      this.close()
+      this.showPlusButton()
+    } else {
+      this.hidePlusButton()
+      this.close()
+    }
+  }
+
+  private editorFocused(): boolean {
+    const active = this.editor.element.ownerDocument?.activeElement
+    return active != null && this.editor.element.contains(active)
+  }
+
+  private caretInEmptyBlock(state: EditorState): boolean {
+    if (!state.selection.empty) return false
+    const block = state.selection.$from.parent
+    return block.isTextblock && block.textContent.trim() === ''
+  }
+
+  // --- Inline (+) button for empty lines ---
+
+  private showPlusButton(): void {
+    if (!this.plusButton) {
+      this.plusButton = document.createElement('button')
+      this.plusButton.type = 'button'
+      this.plusButton.className = 'wryte-plus-button'
+      this.plusButton.title = 'Add block'
+      this.plusButton.setAttribute('aria-label', 'Add block')
+      this.plusButton.innerHTML = iconMarkup('plus', 18)
+      // Do not let the button steal focus from the editor on mousedown —
+      // otherwise the editor blurs, the button is hidden, and the click that
+      // opens the menu never fires.
+      this.plusButton.addEventListener('mousedown', (event) => event.preventDefault())
+      this.plusButton.addEventListener('click', this.handlePlusClick)
+      this.editor.element.appendChild(this.plusButton)
+      if (window.getComputedStyle(this.editor.element).position === 'static') {
+        this.editor.element.style.position = 'relative'
+      }
+    }
+    this.positionPlusButton()
+    this.plusButton.style.display = 'inline-flex'
+  }
+
+  private hidePlusButton(): void {
+    if (this.plusButton) this.plusButton.style.display = 'none'
+  }
+
+  private positionPlusButton(): void {
+    if (!this.plusButton) return
+    const view = this.editor.editorView
+    let coords: Rect | null = null
+    try {
+      coords = view.coordsAtPos(view.state.selection.from)
+    } catch {
+      coords = null
+    }
+    const editorRect = this.editor.element.getBoundingClientRect()
+    if (coords && editorRect.width > 0) {
+      const style = window.getComputedStyle(this.editor.element)
+      const borderTop = parseFloat(style.borderTopWidth) || 0
+      // Place the button 1rem from the right edge, vertically centered on the
+      // caret's line via translateY(-50%).
+      const lineCenterY = coords.top + (coords.bottom - coords.top) / 2
+      this.plusButton.style.left = 'auto'
+      this.plusButton.style.right = '1rem'
+      this.plusButton.style.top = `${Math.max(0, lineCenterY - editorRect.top - borderTop)}px`
+      this.plusButton.style.transform = 'translateY(-50%)'
+    } else {
+      this.plusButton.style.left = 'auto'
+      this.plusButton.style.right = '1rem'
+      this.plusButton.style.top = '4px'
+      this.plusButton.style.transform = 'translateY(-50%)'
+    }
+  }
+
+  private handlePlusClick = (event: MouseEvent): void => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!this.plusButton) return
+    const rect = this.plusButton.getBoundingClientRect()
+    const x = rect.right
+    const y = rect.top + rect.height / 2
+    this.hidePlusButton()
+    // The popup replaces the button on the same line, right-aligned to it.
+    this.openMenu(x, y, 'block', 'block', 'right')
+  }
+
+  private handleFiles = (): void => {
+    if (this.fileInput?.files?.length) this.editor.insertFiles(this.fileInput.files)
+    if (this.fileInput) this.fileInput.value = ''
+    this.close()
+  }
+
+  // --- Pointer-driven behavior (right-click / long-press) ---
+
+  private handleContextMenu = (event: MouseEvent): void => {
+    event.preventDefault()
+    if (Date.now() - this.lastOpen < 400) return
+    this.placeCaretIfNeeded(event.clientX, event.clientY)
+    this.openMenu(event.clientX, event.clientY, 'pointer', this.menuModeForContext())
+  }
+
+  private handlePointerDown = (event: PointerEvent): void => {
+    if (event.pointerType === 'mouse') return
+    this.longPressOrigin = { x: event.clientX, y: event.clientY }
+    this.clearLongPress()
+    this.longPressTimer = setTimeout(() => {
+      if (!this.longPressOrigin) return
+      this.lastOpen = Date.now()
+      this.openMenu(this.longPressOrigin.x, this.longPressOrigin.y, 'pointer', this.menuModeForContext())
+    }, 550)
+  }
+
+  private handlePointerMove = (event: PointerEvent): void => {
+    if (!this.longPressOrigin) return
+    const dx = Math.abs(event.clientX - this.longPressOrigin.x)
+    const dy = Math.abs(event.clientY - this.longPressOrigin.y)
+    if (dx + dy > 8) this.clearLongPress()
+  }
+
+  private handlePointerEnd = (): void => {
+    this.clearLongPress()
+  }
+
+  private clearLongPress(): void {
+    if (this.longPressTimer) clearTimeout(this.longPressTimer)
+    this.longPressTimer = null
+    this.longPressOrigin = null
+  }
+
+  private menuModeForContext(): MenuMode {
+    const state = this.editor.editorView.state
+    // A block-node selection (image, horizontal rule) has no inline text to
+    // format, so fall back to the block popup for it.
+    if (state.selection instanceof NodeSelection && state.selection.node.isBlock) return 'block'
+    if (state.selection.empty && this.caretInEmptyBlock(state)) return 'block'
+    return 'format'
+  }
+
+  private openSelectionBubble(): void {
+    const rect = this.selectionRect()
+    if (!rect) {
+      this.openMenu(0, 0, 'selection', 'format')
+      return
+    }
+    const x = rect.left + (rect.right - rect.left) / 2
+    this.openMenu(x, rect.top, 'selection', 'format')
+  }
+
+  private selectionRect(): Rect | null {
+    const view = this.editor.editorView
+    try {
+      const { from, to } = view.state.selection
+      const start = view.coordsAtPos(from)
+      const end = view.coordsAtPos(to)
+      return {
+        left: Math.min(start.left, end.left),
+        right: Math.max(start.right, end.right),
+        top: Math.min(start.top, end.top),
+        bottom: Math.max(start.bottom, end.bottom),
+      }
+    } catch {
+      return null
+    }
+  }
+
+  private repositionFromSelection(): void {
+    if (!this.menu) return
+    const rect = this.selectionRect()
+    if (!rect) return
+    const x = rect.left + (rect.right - rect.left) / 2
+    this.placeMenu(x, rect.top)
+  }
+
+  // --- Menu lifecycle ---
+
+  private openMenu(x: number, y: number, anchor: Anchor, mode: MenuMode, placement: 'above' | 'right' = 'above'): void {
+    this.hidePlusButton()
+    this.close()
+    this.anchor = anchor
+    const menu = this.buildMenu(mode)
+    // Keep the editor focused while pressing menu buttons: a real browser moves
+    // focus to the button on mousedown, the editor blur fires `handleFocusOut`,
+    // the menu closes, and the click that would run the action never fires.
+    menu.addEventListener('mousedown', (event) => {
+      const target = event.target instanceof Node ? (event.target as Node) : null
+      if (target instanceof Element && target.closest('button')) event.preventDefault()
+    })
+    document.body.appendChild(menu)
+    this.menu = menu
+    this.placeMenu(x, y, placement)
+
+    window.addEventListener('pointerdown', this.handleOutsidePointerDown)
+    window.addEventListener('keydown', this.handleKeyDown)
+    window.addEventListener('scroll', this.handleScroll, true)
+    window.addEventListener('resize', this.handleScroll)
+    window.addEventListener('blur', this.handleWindowBlur)
+  }
+
+  private placeMenu(x: number, y: number, placement: 'above' | 'right' = 'above'): void {
+    if (!this.menu) return
+    const rect = this.menu.getBoundingClientRect()
+    if (placement === 'right') {
+      // The popup sits to the right of the (+) button, its right edge aligned
+      // with the button's right edge, vertically centered on it.
+      const right = Math.min(x, window.innerWidth - 4)
+      const left = Math.max(4, right - rect.width)
+      this.menu.style.left = `${left}px`
+      this.menu.style.top = `${Math.max(4, Math.min(y - rect.height / 2, window.innerHeight - rect.height - 4))}px`
+      return
+    }
+    const left = Math.max(4, Math.min(x - rect.width / 2, window.innerWidth - rect.width - 4))
+    const above = y - rect.height - 10
+    const top = above >= 4 ? above : y + 14
+    this.menu.style.left = `${left}px`
+    this.menu.style.top = `${top}px`
+  }
+
+  private handleOutsidePointerDown = (event: PointerEvent): void => {
+    if (!this.menu) return
+    if (event.target instanceof Node && this.menu.contains(event.target)) return
+    if (this.anchor === 'selection' && event.target instanceof Node && this.editor.element.contains(event.target)) {
+      return
+    }
+    this.close()
+  }
+
+  private handleKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') this.close()
+  }
+
+  private handleScroll = (): void => {
+    if (this.anchor === 'selection') this.repositionFromSelection()
+    else this.close()
+  }
+
+  private handleWindowBlur = (): void => {
+    this.close()
+  }
+
+  private placeCaretIfNeeded(x: number, y: number): void {
+    const view = this.editor.editorView
+    let hit: { pos: number; inside: number } | null = null
+    try {
+      hit = view.posAtCoords({ left: x, top: y })
+    } catch {
+      hit = null
+    }
+    if (!hit || hit.inside < 0) return
+    const { from, to } = view.state.selection
+    if (hit.pos < from || hit.pos > to) {
+      view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(hit.pos))))
+    }
+  }
+
+  private buildMenu(mode: MenuMode): HTMLElement {
+    const menu = document.createElement('div')
+    menu.className = 'wryte-context-menu'
+    menu.setAttribute('role', mode === 'format' ? 'toolbar' : 'menu')
+
+    if (mode === 'block') {
+      menu.appendChild(this.blockItem('attach'))
+      menu.appendChild(this.divider())
+      menu.appendChild(this.blockItem('code'))
+      menu.appendChild(this.blockItem('quote'))
+      menu.appendChild(this.blockItem('heading2'))
+      menu.appendChild(this.blockItem('hr'))
+      menu.appendChild(this.blockListButton())
+    } else {
+      for (const name of TEXT_ATTRIBUTES) menu.appendChild(this.iconAttributeItem(name))
+      menu.appendChild(this.iconLinkItem())
+      menu.appendChild(this.divider())
+      for (const name of BLOCK_ATTRIBUTES) menu.appendChild(this.iconAttributeItem(name))
+    }
+
+    return menu
+  }
+
+  // --- Format bubble items ---
+
+  // Every formatting button keeps the bubble open over the selection so the
+  // user can keep formatting; the selection is only reset by the user (clicking
+  // away, Escape, blur). A block-code conversion collapses the selection to a
+  // caret, so close then.
+  private iconAttributeItem(name: IconName): HTMLElement {
+    const button = this.iconItem(name)
+    button.dataset.wryteAttribute = name
+    if (name === 'heading2') this.updateHeadingButton(button)
+    else if (name === 'bullet') this.updateListButton(button)
+    else if (name === 'bold') this.updateEmphasisButton(button)
+    else if (name === 'code') this.updateCodeSpoilerButton(button)
+    else if (this.editor.attributeIsActive(name)) button.classList.add('is-active')
+    button.addEventListener('click', () => {
+      this.editor.toggleAttribute(name)
+      if (this.editor.editorView.state.selection.empty) {
+        this.close()
+      } else {
+        this.refreshActiveStates()
+        if (this.anchor === 'selection') this.repositionFromSelection()
+      }
+    })
+    return button
+  }
+
+  private iconLinkItem(): HTMLElement {
+    const button = this.iconItem('link')
+    button.dataset.wryteAction = 'link'
+    if (this.editor.attributeIsActive('href')) button.classList.add('is-active')
+    button.addEventListener('click', () => this.showLinkForm())
+    return button
+  }
+
+  // --- Block-insertion popup items ---
+
+  private blockItem(name: IconName): HTMLElement {
+    const button = this.iconItem(name)
+    button.dataset.wryteBlockAction = name
+    button.addEventListener('click', () => this.applyBlockAction(name))
+    return button
+  }
+
+  // The block popup list button cycles paragraph -> bullet -> number -> paragraph
+  // like the toolbar and bubble list buttons, so its icon must reflect the
+  // current list type and its active state.
+  private blockListButton(): HTMLElement {
+    const button = this.iconItem('bullet')
+    button.dataset.wryteBlockAction = 'list'
+    this.updateListButton(button)
+    button.addEventListener('click', () => {
+      this.editor.toggleAttribute('bullet')
+      this.close()
+    })
+    return button
+  }
+
+  private applyBlockAction(name: string): void {
+    switch (name) {
+      case 'attach':
+        this.fileInput?.click()
+        return
+      case 'code':
+        this.editor.setBlockCode()
+        break
+      case 'quote':
+        this.editor.activateAttribute('quote')
+        break
+      case 'heading2':
+        this.editor.activateAttribute('heading2')
+        break
+      case 'hr':
+        this.editor.insertHorizontalRule()
+        break
+    }
+    this.close()
+  }
+
+  private iconItem(name: IconName, disabled = false): HTMLButtonElement {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'wryte-context-item wryte-context-item--icon'
+    button.title = LABELS[name]
+    button.setAttribute('aria-label', LABELS[name])
+    button.disabled = disabled
+    button.innerHTML = iconMarkup(name)
+    return button
+  }
+
+  private divider(): HTMLElement {
+    const element = document.createElement('span')
+    element.className = 'wryte-context-divider'
+    element.setAttribute('role', 'separator')
+    return element
+  }
+
+  private refreshActiveStates(): void {
+    if (!this.menu) return
+    this.menu.querySelectorAll('[data-wryte-attribute]').forEach((element) => {
+      const name = (element as HTMLElement).dataset.wryteAttribute
+      if (!name) return
+      if (name === 'heading2') {
+        this.updateHeadingButton(element as HTMLButtonElement)
+        return
+      }
+      if (name === 'bullet') {
+        this.updateListButton(element as HTMLButtonElement)
+        return
+      }
+      if (name === 'bold') {
+        this.updateEmphasisButton(element as HTMLButtonElement)
+        return
+      }
+      if (name === 'code') {
+        this.updateCodeSpoilerButton(element as HTMLButtonElement)
+        return
+      }
+      element.classList.toggle('is-active', this.editor.attributeIsActive(name))
+    })
+    this.menu.querySelectorAll('[data-wryte-action="link"]').forEach((element) => {
+      element.classList.toggle('is-active', this.editor.attributeIsActive('href'))
+    })
+  }
+
+  // The heading button cycles paragraph -> H2 -> H3 -> paragraph, so its icon
+  // must reflect the current block: the H2 glyph by default, the H3 glyph
+  // while in a heading 3.
+  private updateHeadingButton(button: HTMLButtonElement): void {
+    const isHeading = this.editor.attributeIsActive('heading2') || this.editor.attributeIsActive('heading3')
+    const icon = this.editor.attributeIsActive('heading3') ? 'heading3' : 'heading2'
+    button.innerHTML = iconMarkup(icon)
+    button.classList.toggle('is-active', isHeading)
+  }
+
+  // The list button cycles paragraph -> bullet -> number -> paragraph, so its
+  // icon must reflect the current list type: bullet by default, numeral while
+  // a numbered list is active.
+  private updateListButton(button: HTMLButtonElement): void {
+    const isNumber = this.editor.attributeIsActive('number')
+    const isList = isNumber || this.editor.attributeIsActive('bullet')
+    button.innerHTML = iconMarkup(isNumber ? 'number' : 'bullet')
+    button.title = LABELS[isNumber ? 'number' : 'bullet']
+    button.setAttribute('aria-label', LABELS[isNumber ? 'number' : 'bullet'])
+    button.classList.toggle('is-active', isList)
+  }
+
+  // The emphasis button cycles bold -> italic -> strike -> none, so its icon
+  // must reflect the active inline style: bold by default (the first step of
+  // the cycle), italic while italicized, strikethrough while struck through.
+  private updateEmphasisButton(button: HTMLButtonElement): void {
+    const isBold = this.editor.attributeIsActive('bold')
+    const isItalic = this.editor.attributeIsActive('italic')
+    const isStrike = this.editor.attributeIsActive('strike')
+    const icon = isStrike ? 'strike' : isItalic ? 'italic' : 'bold'
+    button.innerHTML = iconMarkup(icon)
+    button.title = LABELS[isStrike ? 'strike' : isItalic ? 'italic' : 'bold']
+    button.setAttribute('aria-label', LABELS[isStrike ? 'strike' : isItalic ? 'italic' : 'bold'])
+    button.classList.toggle('is-active', isBold || isItalic || isStrike)
+  }
+
+  // The code/spoiler button cycles spoiler -> code -> none, so its icon must
+  // reflect the active style: spoiler by default (the first step of the cycle),
+  // code while inline code is applied.
+  private updateCodeSpoilerButton(button: HTMLButtonElement): void {
+    const isCode = this.editor.attributeIsActive('code')
+    const isSpoiler = this.editor.attributeIsActive('spoiler')
+    const icon = isCode ? 'code' : 'spoiler'
+    button.innerHTML = iconMarkup(icon)
+    button.title = LABELS[isCode ? 'code' : 'spoiler']
+    button.setAttribute('aria-label', LABELS[isCode ? 'code' : 'spoiler'])
+    button.classList.toggle('is-active', isCode || isSpoiler)
+  }
+
+  private showLinkForm(): void {
+    if (!this.menu) return
+    const menu = this.menu
+    menu.innerHTML = ''
+    menu.classList.add('wryte-context-menu--link')
+
+    const input = document.createElement('input')
+    input.type = 'url'
+    input.className = 'wryte-context-link-input'
+    input.placeholder = 'https://example.com'
+
+    const apply = document.createElement('button')
+    apply.type = 'button'
+    apply.className = 'wryte-context-item'
+    apply.textContent = 'Link'
+
+    const remove = document.createElement('button')
+    remove.type = 'button'
+    remove.className = 'wryte-context-item'
+    remove.textContent = 'Remove'
+
+    const applyLink = (): void => {
+      const value = input.value.trim()
+      if (value) this.editor.setLink(value)
+      else this.editor.unlink()
+      this.close()
+      this.editor.focus()
+    }
+
+    apply.addEventListener('click', applyLink)
+    remove.addEventListener('click', () => {
+      this.editor.unlink()
+      this.close()
+      this.editor.focus()
+    })
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') applyLink()
+      if (event.key === 'Escape') {
+        this.close()
+        this.editor.focus()
+      }
+    })
+
+    menu.append(input, apply, remove)
+    input.focus()
+  }
+
+  private close(): void {
+    if (this.menu) {
+      this.menu.remove()
+      this.menu = null
+    }
+    this.anchor = null
+    window.removeEventListener('pointerdown', this.handleOutsidePointerDown)
+    window.removeEventListener('keydown', this.handleKeyDown)
+    window.removeEventListener('scroll', this.handleScroll, true)
+    window.removeEventListener('resize', this.handleScroll)
+    window.removeEventListener('blur', this.handleWindowBlur)
+  }
+}

@@ -1,0 +1,448 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  margin: 0;
+  padding: 2rem;
+  background: #f5f5f7;
+  color: #1d1d1f;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.5rem;
+}
+
+h2 {
+  font-size: 1rem;
+  margin-top: 2rem;
+}
+
+.editor {
+  display: block;
+  position: relative;
+  min-height: 220px;
+  background: #fff;
+  border: 1px solid #d2d2d7;
+  border-radius: 6px;
+}
+
+.editor .ProseMirror {
+  padding: 1rem;
+  min-height: 218px;
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.editor:focus-within {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.2);
+}
+
+/* ProseMirror keeps a trailing <p><br></p> even for an empty document, so
+   `:empty` never matches. The editor mirrors emptiness onto
+   `data-wryte-empty` instead. */
+.editor[data-wryte-empty]::before {
+  content: attr(data-wryte-placeholder);
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.editor img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+/* Content typography, following the @tailwindcss/typography standard
+   (`.prose`). Apply the `.prose` class to any container (e.g. the editor
+   element) whose descendants should render like Tailwind's prose output. */
+.prose {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  --tw-prose-body: #374151;
+  --tw-prose-headings: #111827;
+  --tw-prose-lead: #4b5563;
+  --tw-prose-links: #111827;
+  --tw-prose-bold: #111827;
+  --tw-prose-counters: #6b7280;
+  --tw-prose-bullets: #d1d5db;
+  --tw-prose-hr: #e5e7eb;
+  --tw-prose-quotes: #4b5563;
+  --tw-prose-quote-borders: #d1d5db;
+  --tw-prose-quote-bg: #f3f4f6;
+  --tw-prose-captions: #6b7280;
+  --tw-prose-kbd: #111827;
+  --tw-prose-kbd-shadows: rgb(17 24 39 / 10%);
+  --tw-prose-code: #111827;
+  --tw-prose-code-bg: #f3f4f6;
+  --tw-prose-pre-code: #e5e7eb;
+  --tw-prose-pre-bg: #1f2937;
+  --tw-prose-th-borders: #d1d5db;
+  --tw-prose-td-borders: #e5e7eb;
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--tw-prose-body);
+  max-width: 65ch;
+  overflow-wrap: break-word;
+}
+
+.prose :where(p, ul, ol, dl, pre, table, figure, img, video) {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+}
+
+.prose :where(h1, h2, h3, h4, h5, h6) {
+  color: var(--tw-prose-headings);
+  font-weight: 700;
+  line-height: 1.3333333;
+}
+
+.prose :where(h1) {
+  font-size: 2.25em;
+  margin-top: 0;
+  margin-bottom: 0.8888889em;
+  line-height: 1.1111111;
+  font-weight: 800;
+}
+
+.prose :where(h2) {
+  font-size: 1.5em;
+  margin-top: 2em;
+  margin-bottom: 1em;
+  line-height: 1.3333333;
+  font-weight: 700;
+}
+
+.prose :where(h3) {
+  font-size: 1.25em;
+  margin-top: 1.6em;
+  margin-bottom: 0.6em;
+  line-height: 1.6;
+  font-weight: 600;
+}
+
+.prose :where(h4) {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+.prose :where(h5) {
+  font-size: 0.875em;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+.prose :where(h6) {
+  font-size: 0.75em;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+.prose :where(a) {
+  color: var(--tw-prose-links);
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.prose :where(strong) {
+  color: var(--tw-prose-bold);
+  font-weight: 600;
+}
+
+.prose :where(a strong, blockquote strong, h1 strong, h2 strong, h3 strong, h4 strong, thead th strong) {
+  color: inherit;
+}
+
+.prose :where(del) {
+  text-decoration: line-through;
+}
+
+.prose :where(blockquote) {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+  margin-inline-start: 0;
+  margin-inline-end: 0;
+  padding: 0.75em 1em;
+  font-weight: 400;
+  font-style: normal;
+  color: var(--tw-prose-quotes);
+  background-color: var(--tw-prose-quote-bg);
+  border-inline-start-width: 3px;
+  border-inline-start-color: var(--tw-prose-quote-borders);
+  border-radius: 0.375rem;
+}
+
+.prose :where(blockquote p) {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.prose :where(blockquote p + p) {
+  margin-top: 0.75em;
+}
+
+.prose :where(blockquote blockquote) {
+  margin-top: 0.75em;
+  margin-bottom: 0;
+}
+
+.prose :where(ul, ol) {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+  padding-inline-start: 1.625em;
+}
+
+.prose :where(ul) {
+  list-style-type: disc;
+}
+
+.prose :where(ol) {
+  list-style-type: decimal;
+}
+
+.prose :where(li) {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  padding-inline-start: 0.375em;
+}
+
+.prose :where(ol > li)::marker,
+.prose :where(ul > li)::marker {
+  color: var(--tw-prose-bullets);
+}
+
+.prose :where(ol > li)::marker {
+  color: var(--tw-prose-counters);
+  font-weight: 400;
+}
+
+.prose :where(li > p) {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+.prose :where(li > p:first-child) {
+  margin-top: 1.25em;
+}
+
+.prose :where(li > p:last-child) {
+  margin-bottom: 1.25em;
+}
+
+.prose :where(ul ul, ul ol, ol ul, ol ol) {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+.prose :where(hr) {
+  margin-top: 3em;
+  margin-bottom: 3em;
+  border: 0;
+  border-top-width: 1px;
+  border-top-color: var(--tw-prose-hr);
+}
+
+.prose :where(hr + *) {
+  margin-top: 0;
+}
+
+.prose :where(h2 + *, h3 + *, h4 + *) {
+  margin-top: 0;
+}
+
+.prose :where(code) {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.875em;
+  font-weight: 500;
+  color: var(--tw-prose-code);
+  background-color: var(--tw-prose-code-bg);
+  padding: 0.2em 0.4em;
+  border-radius: 0.375rem;
+}
+
+.prose :where(a code, h1 code, h2 code, h3 code, h4 code, blockquote code, thead th code) {
+  color: inherit;
+}
+
+.prose :where(h2 code) {
+  font-size: 0.875em;
+}
+
+.prose :where(h3 code) {
+  font-size: 0.9em;
+}
+
+.prose :where(pre) {
+  margin-top: 1.7142857em;
+  margin-bottom: 1.7142857em;
+  padding: 0.8571429em 1.1428571em;
+  border-radius: 0.375rem;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.875em;
+  font-weight: 400;
+  line-height: 1.7142857;
+  color: var(--tw-prose-pre-code);
+  background-color: var(--tw-prose-pre-bg);
+}
+
+.prose :where(pre code) {
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+  border-width: 0;
+  font-weight: inherit;
+  color: inherit;
+  font-size: inherit;
+  font-family: inherit;
+  line-height: inherit;
+}
+
+.prose :where(pre code)::before,
+.prose :where(pre code)::after {
+  content: none;
+}
+
+.prose :where(img) {
+  max-width: 100%;
+  border-radius: 0.5rem;
+  margin-top: 2em;
+  margin-bottom: 2em;
+}
+
+.prose :where(kbd) {
+  font-weight: 500;
+  font-family: inherit;
+  font-size: 0.875em;
+  color: var(--tw-prose-kbd);
+  border-radius: 0.3125rem;
+  padding: 0.1875em 0.375em;
+  box-shadow: 0 0 0 1px var(--tw-prose-kbd-shadows), 0 3px 0 var(--tw-prose-kbd-shadows);
+}
+
+.prose :where([data-wryte-attachment]) {
+  font-weight: 500;
+}
+
+.prose .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+.prose .ProseMirror > :last-child {
+  margin-bottom: 0;
+}
+
+/* When the last block can't hold the caret (e.g. a code block), ProseMirror
+   appends a trailing empty paragraph. Zero the bottom margin of the last
+   real content block above it so the spacing comes only from the empty
+   paragraph's own normal top margin. An `hr` is exempt — its own margin is
+   the desired spacing after a horizontal rule. */
+.prose .ProseMirror:has(> p:last-child > br:only-child) > :nth-last-child(2):not(p):not(hr) {
+  margin-bottom: 0;
+}
+
+wryte-toolbar {
+  display: block;
+  background: #fff;
+  border: 1px solid #d2d2d7;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  padding: 0.25rem;
+}
+
+.wryte-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.wryte-toolbar-group {
+  display: inline-flex;
+  gap: 0.125rem;
+}
+
+.wryte-toolbar-spacer {
+  flex: 1;
+}
+
+.wryte-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+}
+
+.wryte-toolbar-button svg {
+  display: block;
+}
+
+.wryte-toolbar-button:hover {
+  background: #f3f4f6;
+}
+
+.wryte-toolbar-button.is-active {
+  background: #2563eb;
+  color: #fff;
+}
+
+.wryte-toolbar-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.wryte-dialog {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.wryte-dialog[hidden] {
+  display: none;
+}
+
+.wryte-dialog-input {
+  flex: 1;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #d2d2d7;
+  border-radius: 4px;
+}
+
+.output,
+.log {
+  padding: 0.75rem;
+  background: #1d1d1f;
+  color: #f5f5f7;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+  overflow: auto;
+  max-height: 16rem;
+}
