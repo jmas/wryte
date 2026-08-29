@@ -77,7 +77,31 @@ export class ToolbarController {
     })
     toolbar.appendChild(this.fileInput)
 
-    toolbar.addEventListener('click', (event) => this.handleClick(event))
+    toolbar.addEventListener('click', this.handleToolbarClick)
+  }
+
+  destroy(): void {
+    this.fileInput.remove()
+    this.toolbar.removeEventListener('click', this.handleToolbarClick)
+  }
+
+  private handleToolbarClick = (event: MouseEvent): void => {
+    const target = event.target instanceof Element ? event.target.closest('[data-wryte-attribute],[data-wryte-action]') : null
+    if (!target || !this.toolbar.contains(target)) return
+
+    const attribute = (target as HTMLElement).dataset.wryteAttribute
+    if (attribute) {
+      event.preventDefault()
+      this.editor.toggleAttribute(attribute)
+      this.editor.focus()
+      return
+    }
+
+    const action = (target as HTMLElement).dataset.wryteAction
+    if (action) {
+      event.preventDefault()
+      this.invokeAction(action, target as HTMLElement)
+    }
   }
 
   update(attributes: Record<string, unknown>): void {
@@ -164,25 +188,6 @@ export class ToolbarController {
     if (value) this.editor.setLink(value)
     else this.editor.unlink()
     this.hideLinkDialog()
-  }
-
-  private handleClick(event: MouseEvent): void {
-    const target = event.target instanceof Element ? event.target.closest('[data-wryte-attribute],[data-wryte-action]') : null
-    if (!target || !this.toolbar.contains(target)) return
-
-    const attribute = (target as HTMLElement).dataset.wryteAttribute
-    if (attribute) {
-      event.preventDefault()
-      this.editor.toggleAttribute(attribute)
-      this.editor.focus()
-      return
-    }
-
-    const action = (target as HTMLElement).dataset.wryteAction
-    if (action) {
-      event.preventDefault()
-      this.invokeAction(action, target as HTMLElement)
-    }
   }
 
   private invokeAction(action: string, invokingElement: HTMLElement): void {

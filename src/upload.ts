@@ -89,4 +89,9 @@ export class UploadManager {
       this.timers.delete(attachment.id)
     }
   }
+
+  destroy(): void {
+    for (const timer of this.timers.values()) clearTimeout(timer)
+    this.timers.clear()
+  }
 }

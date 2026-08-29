@@ -38,6 +38,18 @@ import { ImageNodeView } from './image-node-view'
 const domParser = DOMParser.fromSchema(schema)
 const domSerializer = DOMSerializer.fromSchema(schema)
 
+// Every live Editor, so hosts (and the test setup) can dispose of them all at
+// once. `destroy()` removes its editor from the set.
+const liveEditors = new Set<Editor>()
+
+// Internal: disposes every editor still alive. Kept off the public entry
+// (`src/index.ts`) surface; the test setup uses it in a per-file afterEach so
+// pending ProseMirror DOMObserver timers never fire after the jsdom
+// environment is torn down.
+export function destroyAllLiveEditors(): void {
+  for (const editor of [...liveEditors]) editor.destroy()
+}
+
 // Hides inline spoiler text (rendered as `span.wryte-spoiler`) until hover.
 // Injected once, from the Editor, so it covers both the custom element and
 // programmatic mounts.
@@ -402,11 +414,14 @@ export class Editor implements AttachmentDelegate {
   private lastActions: { undo: boolean; redo: boolean } = { undo: false, redo: false }
   private revision = 0
   private toolbarController: ToolbarController | null = null
+  private contextMenuController: ContextMenuController | null = null
   private imageNodeViews = new Map<string, ImageNodeView>()
+  private destroyed = false
 
   constructor(element: HTMLElement, options: EditorOptions = {}) {
     this.element = element
     this.options = { ...config, ...options }
+    liveEditors.add(this)
 
     injectEditorStyles()
     dispatchWryteEvent(element, EventName.beforeInitialize, { editor: this })
@@ -666,6 +681,7 @@ export class Editor implements AttachmentDelegate {
     this.embedScanPending = true
     setTimeout(() => {
       this.embedScanPending = false
+      if (this.destroyed) return
       this.embedManager.refresh()
     }, 0)
   }
@@ -677,6 +693,7 @@ export class Editor implements AttachmentDelegate {
     this.imageScanPending = true
     setTimeout(() => {
       this.imageScanPending = false
+      if (this.destroyed) return
       this.imageManager.refresh()
     }, 0)
   }
@@ -1688,6 +1705,20 @@ export class Editor implements AttachmentDelegate {
     return this.revision > 0
   }
 
+  // Releases the editor: tears down the context menu and toolbar wiring, stops
+  // pending upload timers and deferred scans, and destroys the ProseMirror view
+  // (which stops its DOMObserver, so no flush timers are left to fire later).
+  // Idempotent; after calling this the editor must not be used.
+  destroy(): void {
+    if (this.destroyed) return
+    this.destroyed = true
+    liveEditors.delete(this)
+    this.toolbarController?.destroy()
+    this.contextMenuController?.destroy()
+    this.uploadManager.destroy()
+    this.view.destroy()
+  }
+
   focus(): void {
     this.view.focus()
   }
@@ -1741,7 +1772,7 @@ export class Editor implements AttachmentDelegate {
 
   private setupContextMenu(): void {
     if (this.options.contextMenu === false) return
-    new ContextMenuController(this)
+    this.contextMenuController = new ContextMenuController(this)
   }
   private bindElementValue(): void {
     if (elementHasValueAccessor(this.element)) return
