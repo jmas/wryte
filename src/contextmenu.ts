@@ -1,5 +1,6 @@
 import { NodeSelection, TextSelection, type EditorState } from 'prosemirror-state'
 import type { Editor } from './editor'
+import { acceptAttribute } from './upload'
 import { iconMarkup, type IconName } from './icons'
 
 const LABELS: Record<string, string> = {
@@ -156,6 +157,7 @@ export class ContextMenuController {
     this.fileInput = document.createElement('input')
     this.fileInput.type = 'file'
     this.fileInput.multiple = true
+    this.fileInput.accept = acceptAttribute(editor.options.fileTypes)
     this.fileInput.hidden = true
     this.fileInput.addEventListener('change', this.handleFiles)
     editor.element.appendChild(this.fileInput)

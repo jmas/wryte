@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Editor } from '../src/index'
+import { Editor, fileTypeMatches } from '../src/index'
 import type { UploadSuccessResult } from '../src/index'
 
 function makeEditor(): Editor {
@@ -187,5 +187,96 @@ describe('upload lifecycle', () => {
     respond!({ url: 'https://cdn.example.com/b.png' })
     expect(successes).toBe(1)
     expect(editor.toMarkdown()).toBe('![photo.png](https://cdn.example.com/a.png)')
+  })
+})
+
+describe('fileTypes whitelist', () => {
+  it('inserts every file by default (no fileTypes)', () => {
+    const editor = makeEditor()
+    const rejects: string[] = []
+    editor.element.addEventListener('wryte-file-reject', () => rejects.push('reject'))
+    editor.insertFiles([imageFile('a.png'), new File(['x'], 'b.mp4', { type: 'video/mp4' })])
+    expect(rejects).toHaveLength(0)
+    expect(editor.getAttachments()).toHaveLength(2)
+  })
+
+  it('accepts only files matching the whitelist', () => {
+    const editor = new Editor(document.createElement('div'), { toolbar: false, fileTypes: ['image/*'] })
+    const rejected: string[] = []
+    editor.element.addEventListener('wryte-file-reject', (event) => {
+      rejected.push((event as CustomEvent).detail.file.name)
+    })
+    editor.insertFiles([
+      imageFile('a.png'),
+      new File(['x'], 'b.mp4', { type: 'video/mp4' }),
+      new File(['x'], 'c.pdf', { type: 'application/pdf' }),
+    ])
+    expect(rejected).toEqual(['b.mp4', 'c.pdf'])
+    expect(editor.getAttachments()).toHaveLength(1)
+    expect(editor.getAttachments()[0].getFilename()).toBe('a.png')
+  })
+
+  it('matches exact MIME types and extensions as well as wildcards', () => {
+    const editor = new Editor(document.createElement('div'), {
+      toolbar: false,
+      fileTypes: ['application/pdf', '.zip'],
+    })
+    editor.insertFiles([
+      new File(['x'], 'doc.pdf', { type: 'application/pdf' }),
+      new File(['x'], 'bundle.zip', { type: 'application/octet-stream' }),
+    ])
+    expect(editor.getAttachments()).toHaveLength(2)
+  })
+
+  it('rejects unknown types when the whitelist is strict', () => {
+    const editor = new Editor(document.createElement('div'), { toolbar: false, fileTypes: ['image/*'] })
+    const unknown = new File(['x'], 'blob')
+    editor.insertFiles([unknown])
+    expect(editor.getAttachments()).toHaveLength(0)
+    expect(editor.toMarkdown()).toBe('')
+  })
+
+  it('rejects everything with an empty fileTypes array', () => {
+    const editor = new Editor(document.createElement('div'), { toolbar: false, fileTypes: [] })
+    editor.insertFiles([imageFile()])
+    expect(editor.getAttachments()).toHaveLength(0)
+  })
+
+  it('exposes isFileTypeAllowed for programmatic checks', () => {
+    const editor = new Editor(document.createElement('div'), { toolbar: false, fileTypes: ['image/*'] })
+    expect(editor.isFileTypeAllowed(imageFile())).toBe(true)
+    expect(editor.isFileTypeAllowed(new File(['x'], 'b.mp4', { type: 'video/mp4' }))).toBe(false)
+  })
+})
+
+describe('fileTypeMatches', () => {
+  const file = (type: string, name = 'file'): { type: string; name: string } => ({ type, name })
+
+  it('matches a MIME wildcard', () => {
+    expect(fileTypeMatches(file('image/png'), ['image/*'])).toBe(true)
+    expect(fileTypeMatches(file('image/svg+xml'), ['image/*'])).toBe(true)
+    expect(fileTypeMatches(file('video/mp4'), ['image/*'])).toBe(false)
+  })
+
+  it('matches an exact MIME type case-insensitively', () => {
+    expect(fileTypeMatches(file('image/PNG'), ['image/png'])).toBe(true)
+    expect(fileTypeMatches(file('application/pdf'), ['application/pdf'])).toBe(true)
+    expect(fileTypeMatches(file('image/png'), ['application/pdf'])).toBe(false)
+  })
+
+  it('matches a bare extension against the filename', () => {
+    expect(fileTypeMatches(file('', 'archive.ZIP'), ['.zip'])).toBe(true)
+    expect(fileTypeMatches(file('application/octet-stream', 'bundle.tar.gz'), ['.gz'])).toBe(true)
+    expect(fileTypeMatches(file('', 'notes.txt'), ['.zip'])).toBe(false)
+  })
+
+  it('allows anything with the * wildcard', () => {
+    expect(fileTypeMatches(file('video/mp4'), ['*'])).toBe(true)
+    expect(fileTypeMatches(file('', 'no-type'), ['*/*'])).toBe(true)
+  })
+
+  it('matches when any pattern matches', () => {
+    expect(fileTypeMatches(file('video/mp4', 'clip.mp4'), ['image/*', 'video/*', '.pdf'])).toBe(true)
+    expect(fileTypeMatches(file('text/plain', 'notes.txt'), ['image/*', 'video/*', '.pdf'])).toBe(false)
   })
 })

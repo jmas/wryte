@@ -75,6 +75,14 @@ export function registerEditorElement(name = 'wryte-editor'): void {
           .map((entry) => entry.trim())
           .filter((entry): entry is (typeof ALL_ABILITIES)[number] => (ALL_ABILITIES as readonly string[]).includes(entry))
       }
+      if (this.hasAttribute('filetypes')) {
+        // Comma-separated MIME types / wildcards / extensions, e.g.
+        // `filetypes="image/*, video/*, .pdf"`. Omitted = any file.
+        options.fileTypes = (this.getAttribute('filetypes') ?? '')
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0)
+      }
 
       this.#editor = new Editor(this, options)
       if (this.hasAttribute('disabled')) this.#editor.disable()

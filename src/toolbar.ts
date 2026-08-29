@@ -1,5 +1,6 @@
 import { EventName, dispatchWryteEvent } from './events'
 import type { Editor } from './editor'
+import { acceptAttribute } from './upload'
 import { iconMarkup } from './icons'
 
 const label = {
@@ -70,6 +71,7 @@ export class ToolbarController {
     this.fileInput = document.createElement('input')
     this.fileInput.type = 'file'
     this.fileInput.multiple = true
+    this.fileInput.accept = acceptAttribute(editor.options.fileTypes)
     this.fileInput.hidden = true
     this.fileInput.addEventListener('change', () => {
       if (this.fileInput.files?.length) this.editor.insertFiles(this.fileInput.files)

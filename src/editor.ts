@@ -26,7 +26,7 @@ import { Attachment } from './attachment'
 import type { AttachmentDelegate } from './attachment'
 import { EventName, dispatchWryteEvent } from './events'
 import type { WryteEventName } from './events'
-import { UploadManager, type UploadSuccessResult } from './upload'
+import { UploadManager, type UploadSuccessResult, fileTypeMatches } from './upload'
 import { EmbedManager, extractHost, URL_RE, type EmbedResult } from './embed'
 import { ImageManager, type ImageResult } from './image'
 import { textOffsetToPos, posToTextOffset, lastInlinePos } from './positions'
@@ -172,6 +172,11 @@ export interface EditorOptions {
   toolbar?: boolean | HTMLElement | string
   contextMenu?: boolean
   uploadTimeout?: number | null
+  // Whitelist of file types that may be added (MIME types, `image/*`-style
+  // wildcards, or `.ext` extensions, following the `<input accept>` syntax).
+  // `undefined`/`null` (the default) allows any file; an array restricts
+  // insertion to files matching one of the patterns.
+  fileTypes?: string[] | null
   value?: string
   html?: string
   editable?: boolean
@@ -195,6 +200,7 @@ export interface EditorConfig {
   toolbar: boolean
   contextMenu: boolean
   uploadTimeout: number | null
+  fileTypes: string[] | null
   editable: boolean
   readonly: boolean
   abilities: Ability[] | null
@@ -209,6 +215,7 @@ export const config: EditorConfig = {
   toolbar: false,
   contextMenu: true,
   uploadTimeout: null,
+  fileTypes: null,
   editable: true,
   readonly: false,
   abilities: null,
@@ -1149,10 +1156,26 @@ export class Editor implements AttachmentDelegate {
     this.insertFiles(files)
   }
 
+  // True when `file` may be added to this editor. The `fileTypes` config is a
+  // whitelist of MIME types / wildcards / extensions (HTML `accept` syntax);
+  // `null` (the default) allows every file.
+  isFileTypeAllowed(file: File): boolean {
+    const { fileTypes } = this.options
+    return fileTypes == null || fileTypeMatches(file, fileTypes)
+  }
+
   insertFiles(files: FileList | File[]): void {
     if (!this.abilityEnabled('attach')) return
     const accepted: Attachment[] = []
     for (const file of Array.from(files)) {
+      if (!this.isFileTypeAllowed(file)) {
+        dispatchWryteEvent(this.element, EventName.fileReject, {
+          editor: this,
+          file,
+          reason: `File type ${file.type || file.name} is not allowed`,
+        })
+        continue
+      }
       let reason: string | null = null
       const event = dispatchWryteEvent(this.element, EventName.fileAccept, {
         editor: this,

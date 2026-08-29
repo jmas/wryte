@@ -28,6 +28,37 @@ export interface UploadRequestDetail {
   progress(fraction: number): void
 }
 
+// File-type patterns follow the `<input accept>` syntax: a MIME type
+// (`image/png`), a MIME type with a `/*` wildcard (`image/*`), or a bare
+// extension (`.pdf`). Matching is case-insensitive.
+export function fileTypeMatches(
+  file: { type: string; name: string },
+  patterns: readonly string[],
+): boolean {
+  const type = (file.type || '').toLowerCase()
+  const name = file.name.toLowerCase()
+  for (const raw of patterns) {
+    const pattern = raw.trim().toLowerCase()
+    if (!pattern) continue
+    if (pattern === '*' || pattern === '*/*') return true
+    if (pattern.startsWith('.')) {
+      if (name.endsWith(pattern)) return true
+    } else if (pattern.endsWith('/*')) {
+      if (type.startsWith(pattern.slice(0, -1))) return true
+    } else if (type === pattern) {
+      return true
+    }
+  }
+  return false
+}
+
+// The `accept` attribute string for the file inputs, mirroring `config.fileTypes`.
+// Empty (or null) leaves the pickers unrestricted.
+export function acceptAttribute(patterns: readonly string[] | null): string {
+  if (!patterns || patterns.length === 0) return ''
+  return patterns.join(',')
+}
+
 // Drives the file-upload lifecycle through bubbling DOM events. The editor
 // never uploads anything itself: a listener catches `wryte-upload-request`
 // (from the editor element or anywhere up the tree, e.g. `document`), performs

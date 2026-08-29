@@ -397,6 +397,15 @@ describe('bubble follows the editor selection', () => {
     expect(editor.attributeIsActive('code')).toBe(true)
   })
 
+  it('mirrors the fileTypes config onto the attach file input', () => {
+    const editor = makeEditor('', { fileTypes: ['image/*', 'video/*'] })
+    const fileInput = editor.element.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(fileInput).not.toBeNull()
+    expect(fileInput!.multiple).toBe(true)
+    expect(fileInput!.accept).toBe('image/*,video/*')
+    expect(editor.isFileTypeAllowed(new File(['x'], 'clip.mp4', { type: 'video/mp4' }))).toBe(true)
+  })
+
   it('keeps the editor focused on menu button press so actions fire', () => {
     const editor = makeEditor('')
     editor.focus()

@@ -175,6 +175,20 @@ describe('wryte-editor custom element', () => {
     const editor = (wrapper.querySelector('wryte-editor')! as unknown as { editor: Editor }).editor
     expect(editor.options.abilities).toEqual(['bold'])
   })
+
+  it('parses the filetypes attribute into a whitelist', () => {
+    const wrapper = makeElement('<wryte-editor filetypes="image/*, video/*, .pdf"></wryte-editor>')
+    const editor = (wrapper.querySelector('wryte-editor')! as unknown as { editor: Editor }).editor
+    expect(editor.options.fileTypes).toEqual(['image/*', 'video/*', '.pdf'])
+    expect(editor.isFileTypeAllowed(new File(['x'], 'a.png', { type: 'image/png' }))).toBe(true)
+    expect(editor.isFileTypeAllowed(new File(['x'], 'b.mp3', { type: 'audio/mpeg' }))).toBe(false)
+  })
+
+  it('leaves fileTypes null when the attribute is absent', () => {
+    const wrapper = makeElement()
+    const editor = (wrapper.querySelector('wryte-editor')! as unknown as { editor: Editor }).editor
+    expect(editor.options.fileTypes).toBeNull()
+  })
 })
 
 describe('value accessor and form fallback', () => {

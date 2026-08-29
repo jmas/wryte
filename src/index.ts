@@ -21,6 +21,7 @@ export type {
   UploadResult,
   UploadSuccessResult,
 } from './upload.js'
+export { fileTypeMatches, acceptAttribute } from './upload.js'
 
 import { Editor, config } from './editor.js'
 import { registerElement } from './elements.js'

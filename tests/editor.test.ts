@@ -40,6 +40,7 @@ describe('exports', () => {
       toolbar: false,
       contextMenu: true,
       uploadTimeout: null,
+      fileTypes: null,
       editable: true,
       readonly: false,
       abilities: null,

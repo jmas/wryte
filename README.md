@@ -75,7 +75,7 @@ editor.toMarkdown() // the current value
 editor.loadMarkdown("## New content")
 ```
 
-Supported attributes: `value`, `name`, `placeholder`, `input` (id of a hidden `<input>` that holds the initial markdown and receives updates — Trix-style), `toolbar` (id of an existing toolbar element), `autofocus`, `disabled`, `readonly`, `required`, `abilities` (comma-separated whitelist, see [Abilities](#abilities)).
+Supported attributes: `value`, `name`, `placeholder`, `input` (id of a hidden `<input>` that holds the initial markdown and receives updates — Trix-style), `toolbar` (id of an existing toolbar element), `autofocus`, `disabled`, `readonly`, `required`, `abilities` (comma-separated whitelist, see [Abilities](#abilities)), `filetypes` (comma-separated MIME types / wildcards / extensions, see [Restricting file types](#restricting-file-types)).
 
 ### Autofocus
 
@@ -148,6 +148,22 @@ document.addEventListener("wryte-upload-request", async (event) => {
 Dropping files works the same way: dragging files onto the editor fires **`wryte-before-drop`** (cancelable — prevent it to ignore the whole drop) and inserts them at the drop point, then **`wryte-drop`** fires once the files are in. Pasting an image copied from your file manager (Ctrl+V) inserts it through the same pipeline — **`wryte-before-paste`** gates the file paste, then **`wryte-paste`** fires after. Files dropped/pasted with no data (plain text, or images already inside the document) fall through to ProseMirror's default handling.
 
 Lifecycle events: `wryte-file-accept` (cancelable, or call `event.detail.reject("reason")` → `wryte-file-reject`), `wryte-attachment-add`, `wryte-upload-request`, `wryte-upload-start`, `wryte-upload-progress`, `wryte-upload-success`, `wryte-upload-error`, `wryte-attachment-edit`, `wryte-attachment-remove`.
+
+### Restricting file types
+
+By default any file can be added (picked, dropped or pasted). Pass `fileTypes` to whitelist which MIME types may be inserted — patterns follow the `<input accept>` syntax: exact types (`image/png`), `/*` wildcards (`image/*`, `video/*`), or bare extensions (`.pdf`). Matching is case-insensitive.
+
+```js
+const editor = new Editor(mount, {
+  fileTypes: ["image/*", "video/*", ".pdf"],
+})
+```
+
+```html
+<wryte-editor filetypes="image/*, video/*, .pdf"></wryte-editor>
+```
+
+The whitelist is enforced on every insertion path — the file picker (`accept` is set on it), drag-and-drop and paste. A disallowed file fires `wryte-file-reject` and is skipped. `fileTypes: []` disables all file insertion; `editor.isFileTypeAllowed(file)` lets you check a file programmatically. The matcher is exported as `fileTypeMatches(file, patterns)`.
 
 ## Embeds
 

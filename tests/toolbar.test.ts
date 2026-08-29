@@ -207,6 +207,18 @@ describe('ToolbarController', () => {
     expect(editor.toMarkdown()).toBe('some text\n\n![a.png](https://cdn.example.com/a.png)')
   })
 
+  it('mirrors the fileTypes config onto the file input accept attribute', () => {
+    const toolbar = document.createElement('div')
+    const element = document.createElement('div')
+    element.appendChild(toolbar)
+    const editor = new Editor(element, { toolbar, fileTypes: ['image/*', '.pdf'] })
+    const fileInput = toolbar.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(fileInput).not.toBeNull()
+    expect(fileInput!.accept).toBe('image/*,.pdf')
+    expect(fileInput!.multiple).toBe(true)
+    expect(editor.isFileTypeAllowed(new File(['x'], 'a.png', { type: 'image/png' }))).toBe(true)
+  })
+
   it('dispatches wryte-action-invoke for custom x-* actions', () => {
     const { editor, toolbar } = makeToolbarEditor('<button type="button" data-wryte-action="x-export">Export</button>')
     const invokes: Array<{ actionName: string; invokingElement: HTMLElement }> = []
