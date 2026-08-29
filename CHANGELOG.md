@@ -1,5 +1,11 @@
 # @jmas/wryte
 
+## 0.5.1
+
+### Patch Changes
+
+- e22a383: Silence the ProseMirror "TextSelection endpoint not pointing into a node with inline content" warning in tests (the editor intentionally sets selections at block-image boundaries).
+
 ## 0.5.0
 
 ### Minor Changes
