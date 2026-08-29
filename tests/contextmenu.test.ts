@@ -17,6 +17,20 @@ function menu(): HTMLElement | null {
   return document.querySelector('.wryte-context-menu')
 }
 
+// Selects the first block image node in the document (a NodeSelection).
+function selectFirstImage(editor: Editor): void {
+  const doc = editor.editorView.state.doc
+  let imgPos = -1
+  doc.descendants((node, pos) => {
+    if (node.type.name === 'image' && imgPos === -1) {
+      imgPos = pos
+      return false
+    }
+  })
+  expect(imgPos).toBeGreaterThan(-1)
+  editor.editorView.dispatch(editor.editorView.state.tr.setSelection(NodeSelection.create(doc, imgPos)))
+}
+
 // jsdom serializes self-closing SVG tags as `></path>`, so compare the path
 // data rather than the raw markup.
 function buttonIconPaths(button: HTMLButtonElement): string[] {
@@ -463,7 +477,7 @@ describe('bubble follows the editor selection', () => {
     expect(menu()).toBeNull()
   })
 
-  it('does not open the bubble over a block image selection', () => {
+  it('opens the image tools bubble over a selected block image', () => {
     const editor = makeEditor('')
     editor.loadDocument(
       schema.nodeFromJSON({
@@ -479,22 +493,169 @@ describe('bubble follows the editor selection', () => {
       }),
     )
     editor.focus()
+    selectFirstImage(editor)
 
-    const doc = editor.editorView.state.doc
-    let imgPos = -1
-    doc.descendants((node, pos) => {
-      if (node.type.name === 'image' && imgPos === -1) {
-        imgPos = pos
-        return false
-      }
-    })
-    expect(imgPos).toBeGreaterThan(-1)
-    editor.editorView.dispatch(
-      editor.editorView.state.tr.setSelection(NodeSelection.create(doc, imgPos)),
-    )
-
-    expect(menu()).toBeNull()
     expect(editor.editorView.state.selection instanceof NodeSelection).toBe(true)
+    const bubble = menu()
+    expect(bubble).not.toBeNull()
+    for (const action of ['edit', 'trash']) {
+      expect(bubble!.querySelector(`[data-wryte-image-action="${action}"]`)).not.toBeNull()
+    }
+    // The image bubble must not contain text formatting.
+    expect(bubble!.querySelector('[data-wryte-attribute="bold"]')).toBeNull()
+  })
+
+  it('edits the alt text of a selected image from the image bubble', () => {
+    const editor = makeEditor('')
+    editor.loadDocument(
+      schema.nodeFromJSON({
+        type: 'doc',
+        content: [
+          { type: 'paragraph' },
+          {
+            type: 'image',
+            attrs: { url: 'https://example.com/x.png', alt: 'old alt', filename: 'x.png', contentType: 'image/png' },
+          },
+          { type: 'paragraph' },
+        ],
+      }),
+    )
+    editor.focus()
+    selectFirstImage(editor)
+
+    ;(menu()!.querySelector('[data-wryte-image-action="edit"]') as HTMLButtonElement).click()
+    const input = menu()!.querySelector('.wryte-context-link-input') as HTMLInputElement
+    expect(input).not.toBeNull()
+    expect(input.value).toBe('old alt')
+
+    input.value = 'new alt'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(editor.toMarkdown()).toContain('![new alt](https://example.com/x.png)')
+    expect(editor.toMarkdown()).not.toContain('![old alt]')
+  })
+
+  it('clears the alt text from the image bubble form', () => {
+    const editor = makeEditor('')
+    editor.loadDocument(
+      schema.nodeFromJSON({
+        type: 'doc',
+        content: [
+          { type: 'paragraph' },
+          {
+            type: 'image',
+            attrs: { url: 'https://example.com/x.png', alt: 'old alt', filename: 'x.png', contentType: 'image/png' },
+          },
+          { type: 'paragraph' },
+        ],
+      }),
+    )
+    editor.focus()
+    selectFirstImage(editor)
+
+    ;(menu()!.querySelector('[data-wryte-image-action="edit"]') as HTMLButtonElement).click()
+    const remove = [...menu()!.querySelectorAll('.wryte-context-item')].find((button) => button.textContent === 'Remove')
+    expect(remove).not.toBeUndefined()
+    ;(remove as HTMLButtonElement).click()
+    expect(editor.toMarkdown()).toContain('![x.png](https://example.com/x.png)')
+  })
+
+  it('removes a selected image from the image bubble', () => {
+    const editor = makeEditor('')
+    editor.loadDocument(
+      schema.nodeFromJSON({
+        type: 'doc',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: 'before' }] },
+          {
+            type: 'image',
+            attrs: { url: 'https://example.com/x.png', filename: 'x.png', contentType: 'image/png' },
+          },
+          { type: 'paragraph', content: [{ type: 'text', text: 'after' }] },
+        ],
+      }),
+    )
+    editor.focus()
+    selectFirstImage(editor)
+
+    ;(menu()!.querySelector('[data-wryte-image-action="trash"]') as HTMLButtonElement).click()
+    expect(editor.toMarkdown()).toBe('before\n\nafter')
+    expect(menu()).toBeNull()
+  })
+
+  it('opens the image tools on right-click over a selected image', () => {
+    const editor = makeEditor('')
+    editor.loadDocument(
+      schema.nodeFromJSON({
+        type: 'doc',
+        content: [
+          { type: 'paragraph' },
+          {
+            type: 'image',
+            attrs: { url: 'https://example.com/x.png', filename: 'x.png', contentType: 'image/png' },
+          },
+          { type: 'paragraph' },
+        ],
+      }),
+    )
+    editor.focus()
+    selectFirstImage(editor)
+    rightClick(editor.element)
+
+    const bubble = menu()
+    expect(bubble).not.toBeNull()
+    expect(bubble!.querySelector('[data-wryte-image-action="edit"]')).not.toBeNull()
+    expect(bubble!.querySelector('[data-wryte-block-action]')).toBeNull()
+  })
+
+  it('switches the format bubble to the image tools when an image is selected', () => {
+    const editor = makeEditor('')
+    editor.loadDocument(
+      schema.nodeFromJSON({
+        type: 'doc',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: 'select me' }] },
+          {
+            type: 'image',
+            attrs: { url: 'https://example.com/x.png', filename: 'x.png', contentType: 'image/png' },
+          },
+          { type: 'paragraph' },
+        ],
+      }),
+    )
+    editor.focus()
+    editor.setSelectedRange([0, 9])
+    expect(menu()!.querySelector('[data-wryte-attribute="bold"]')).not.toBeNull()
+
+    selectFirstImage(editor)
+    const bubble = menu()
+    expect(bubble!.querySelector('[data-wryte-image-action="edit"]')).not.toBeNull()
+    expect(bubble!.querySelector('[data-wryte-attribute="bold"]')).toBeNull()
+  })
+
+  it('closes the image alt form on Escape', () => {
+    const editor = makeEditor('')
+    editor.loadDocument(
+      schema.nodeFromJSON({
+        type: 'doc',
+        content: [
+          { type: 'paragraph' },
+          {
+            type: 'image',
+            attrs: { url: 'https://example.com/x.png', alt: 'old alt', filename: 'x.png', contentType: 'image/png' },
+          },
+          { type: 'paragraph' },
+        ],
+      }),
+    )
+    editor.focus()
+    selectFirstImage(editor)
+
+    ;(menu()!.querySelector('[data-wryte-image-action="edit"]') as HTMLButtonElement).click()
+    const input = menu()!.querySelector('.wryte-context-link-input') as HTMLInputElement
+    expect(input).not.toBeNull()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(menu()).toBeNull()
+    expect(editor.toMarkdown()).toContain('![old alt](https://example.com/x.png)')
   })
 
   it('does not open the bubble over a horizontal rule selection', () => {

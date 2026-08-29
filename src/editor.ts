@@ -1,4 +1,4 @@
-import { EditorState, TextSelection, type Transaction } from 'prosemirror-state'
+import { EditorState, NodeSelection, TextSelection, type Transaction } from 'prosemirror-state'
 import { EditorView } from 'prosemirror-view'
 import { gapCursor } from 'prosemirror-gapcursor'
 import { history, undoDepth, redoDepth, closeHistory, undo as undoCommand, redo as redoCommand } from 'prosemirror-history'
@@ -66,6 +66,8 @@ function injectEditorStyles(): void {
     '.ProseMirror div.wryte-embed.wryte-selected{outline:3px solid #2563eb;outline-offset:2px}' +
     'div.wryte-embed.wryte-selected{outline:3px solid #2563eb;outline-offset:2px}' +
     '.ProseMirror .wryte-image + .wryte-image,.ProseMirror .wryte-image + .wryte-embed,.ProseMirror .wryte-embed + .wryte-image,.ProseMirror .wryte-embed + .wryte-embed{margin-top:1rem}' +
+    '.ProseMirror > .wryte-image:has(+ .ProseMirror-gapcursor),.ProseMirror > .wryte-embed:has(+ .ProseMirror-gapcursor),.ProseMirror > hr:has(+ .ProseMirror-gapcursor){margin-bottom:1.5rem}' +
+    '.ProseMirror-gapcursor{position:absolute;pointer-events:none;width:0!important;height:0!important;overflow:hidden;display:none}.ProseMirror-focused .ProseMirror-gapcursor{display:block}.ProseMirror-gapcursor:after{content:"";display:block;position:absolute;top:-2px;width:20px;border-top:1px solid #000;animation:ProseMirror-cursor-blink 1.1s steps(2,start) infinite}@keyframes ProseMirror-cursor-blink{to{visibility:hidden}}' +
     'img.ProseMirror-separator{display:inline-block!important;width:0!important;height:0!important;opacity:0;border:0!important;margin:0!important;padding:0!important;overflow:hidden}' +
     '.ProseMirror p:has(br.ProseMirror-trailingBreak:last-child):has(> a:first-child > [data-wryte-attachment]:first-child, > [data-wryte-attachment]:first-child){line-height:0}'
   document.head.appendChild(style)
@@ -1225,6 +1227,19 @@ export class Editor implements AttachmentDelegate {
       this.view.dispatch(state.tr.setNodeMarkup(pos, listType, attrs))
       return
     }
+  }
+
+  // Sets the `alt` text on the selected block image (a NodeSelection over an
+  // image node). An empty/whitespace value clears the alt. A no-op when the
+  // selection is not a block image.
+  setImageAlt(alt: string): void {
+    const state = this.view.state
+    const { selection } = state
+    if (!(selection instanceof NodeSelection) || selection.node.type !== imageType) return
+    const value = alt.trim() || null
+    if (selection.node.attrs.alt === value) return
+    const tr = state.tr.setNodeMarkup(selection.from, null, { ...selection.node.attrs, alt: value })
+    this.view.dispatch(tr)
   }
 
   setLink(href: string): void {

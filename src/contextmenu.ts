@@ -15,6 +15,8 @@ const LABELS: Record<string, string> = {
   number: 'Numbered list',
   attach: 'Insert attachment',
   hr: 'Horizontal rule',
+  edit: 'Edit alt text',
+  trash: 'Remove image',
 }
 
 // The emphasis button (bold -> italic -> strike) and the code/spoiler button
@@ -122,7 +124,7 @@ function ensureStyles(): void {
   document.head.appendChild(style)
 }
 
-type MenuMode = 'format' | 'block'
+type MenuMode = 'format' | 'block' | 'image'
 type Anchor = 'selection' | 'pointer' | 'block'
 
 interface Rect {
@@ -146,6 +148,7 @@ export class ContextMenuController {
   private longPressTimer: ReturnType<typeof setTimeout> | null = null
   private longPressOrigin: { x: number; y: number } | null = null
   private lastOpen = 0
+  private suppressNextFocusOpen = false
 
   constructor(private editor: Editor) {
     ensureStyles()
@@ -189,6 +192,13 @@ export class ContextMenuController {
   // --- Selection-driven behavior ---
 
   private handleFocus = (): void => {
+    // Closing the image alt form on Escape refocuses the editor, which would
+    // immediately re-open the image bubble over the still-selected image.
+    // Swallow that one refocus so Escape actually dismisses the menu.
+    if (this.suppressNextFocusOpen) {
+      this.suppressNextFocusOpen = false
+      return
+    }
     this.handleSelectionChange()
   }
 
@@ -211,8 +221,27 @@ export class ContextMenuController {
     }
     const state = this.editor.editorView.state
 
-    // A block-node selection (image, horizontal rule) is a whole element, not
-    // inline text, so the formatting bubble is pointless there — never open it.
+    // A block-node selection over an image opens the image tools bubble (edit
+    // alt / remove). Other block nodes (horizontal rule, embed) are whole
+    // elements with no inline text to format, so never open anything there.
+    if (state.selection instanceof NodeSelection && state.selection.node.type.name === 'image') {
+      this.hidePlusButton()
+      if (this.menu && this.anchor === 'selection') {
+        // The alt form holds the previous image's value, and a menu from
+        // another mode (format bubble) must switch to the image tools; rebuild
+        // so the bubble matches the new selection. A plain image-tools bubble
+        // just follows the selection.
+        if (this.menu.querySelector('[data-wryte-image-action]') && !this.menu.querySelector('.wryte-context-link-input')) {
+          this.repositionFromSelection()
+        } else {
+          this.openSelectionBubble('image')
+        }
+      } else {
+        this.openSelectionBubble('image')
+      }
+      return
+    }
+
     if (state.selection instanceof NodeSelection && state.selection.node.isBlock) {
       this.hidePlusButton()
       this.close()
@@ -329,8 +358,34 @@ export class ContextMenuController {
   private handleContextMenu = (event: MouseEvent): void => {
     event.preventDefault()
     if (Date.now() - this.lastOpen < 400) return
+    // A right-click directly on an image opens the image tools even when the
+    // image was never selected: NodeSelect it and show the image menu.
+    const imagePos = this.imagePosAtPointer(event.clientX, event.clientY)
+    if (imagePos != null) {
+      const view = this.editor.editorView
+      view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, imagePos)))
+      this.openMenu(event.clientX, event.clientY, 'pointer', 'image')
+      return
+    }
     this.placeCaretIfNeeded(event.clientX, event.clientY)
     this.openMenu(event.clientX, event.clientY, 'pointer', this.menuModeForContext())
+  }
+
+  private imagePosAtPointer(x: number, y: number): number | null {
+    const view = this.editor.editorView
+    let hit: { pos: number; inside: number } | null = null
+    try {
+      hit = view.posAtCoords({ left: x, top: y })
+    } catch {
+      hit = null
+    }
+    if (!hit) return null
+    for (const pos of [hit.pos, hit.inside >= 0 ? hit.pos - 1 : -1]) {
+      if (pos < 0) continue
+      const node = view.state.doc.nodeAt(pos)
+      if (node && node.type.name === 'image') return pos
+    }
+    return null
   }
 
   private handlePointerDown = (event: PointerEvent): void => {
@@ -363,21 +418,23 @@ export class ContextMenuController {
 
   private menuModeForContext(): MenuMode {
     const state = this.editor.editorView.state
-    // A block-node selection (image, horizontal rule) has no inline text to
-    // format, so fall back to the block popup for it.
+    // A block-node selection over an image gets the image tools (edit alt /
+    // remove); any other block node (horizontal rule, embed) falls back to the
+    // block-insertion popup.
+    if (state.selection instanceof NodeSelection && state.selection.node.type.name === 'image') return 'image'
     if (state.selection instanceof NodeSelection && state.selection.node.isBlock) return 'block'
     if (state.selection.empty && this.caretInEmptyBlock(state)) return 'block'
     return 'format'
   }
 
-  private openSelectionBubble(): void {
+  private openSelectionBubble(mode: MenuMode = 'format'): void {
     const rect = this.selectionRect()
     if (!rect) {
-      this.openMenu(0, 0, 'selection', 'format')
+      this.openMenu(0, 0, 'selection', mode)
       return
     }
     const x = rect.left + (rect.right - rect.left) / 2
-    this.openMenu(x, rect.top, 'selection', 'format')
+    this.openMenu(x, rect.top, 'selection', mode)
   }
 
   private selectionRect(): Rect | null {
@@ -491,7 +548,12 @@ export class ContextMenuController {
     menu.className = 'wryte-context-menu'
     menu.setAttribute('role', mode === 'format' ? 'toolbar' : 'menu')
 
-    if (mode === 'block') {
+    if (mode === 'image') {
+      // The image tools bubble mirrors Trix's attachment toolbar: edit the alt
+      // text (caption) or remove the image.
+      menu.appendChild(this.imageItem('edit'))
+      menu.appendChild(this.imageItem('trash'))
+    } else if (mode === 'block') {
       menu.appendChild(this.blockItem('attach'))
       menu.appendChild(this.divider())
       menu.appendChild(this.blockItem('code'))
@@ -720,6 +782,95 @@ export class ContextMenuController {
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') applyLink()
       if (event.key === 'Escape') {
+        this.close()
+        this.editor.focus()
+      }
+    })
+
+    menu.append(input, apply, remove)
+    input.focus()
+  }
+
+  // --- Image tools (selected block image) ---
+
+  // Trix shows a toolbar with Remove next to an inline caption editor when an
+  // image is selected. Here the caption editor is a small form that opens in
+  // the bubble (like the link form); the toolbar Remove deletes the image.
+  private imageItem(name: IconName): HTMLElement {
+    const button = this.iconItem(name)
+    button.dataset.wryteImageAction = name
+    button.addEventListener('click', () => this.applyImageAction(name))
+    return button
+  }
+
+  private applyImageAction(name: string): void {
+    if (name === 'edit') {
+      this.showAltForm()
+      return
+    }
+    if (name === 'trash') {
+      this.removeSelectedImage()
+      this.close()
+    }
+  }
+
+  private removeSelectedImage(): void {
+    const view = this.editor.editorView
+    const { selection } = view.state
+    if (!(selection instanceof NodeSelection) || selection.node.type.name !== 'image') return
+    const pos = selection.from
+    view.dispatch(view.state.tr.delete(pos, pos + selection.node.nodeSize))
+  }
+
+  // The alt-text form, mirroring `showLinkForm`: a text field plus Apply and
+  // Remove buttons. Apply stores the value (empty clears the alt), Remove
+  // clears it outright.
+  private showAltForm(): void {
+    if (!this.menu) return
+    const menu = this.menu
+    menu.innerHTML = ''
+    menu.classList.add('wryte-context-menu--link')
+
+    const selection = this.editor.editorView.state.selection
+    const currentAlt =
+      selection instanceof NodeSelection && selection.node.type.name === 'image'
+        ? ((selection.node.attrs.alt as string | null) ?? '')
+        : ''
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'wryte-context-link-input'
+    input.placeholder = 'Add alt text…'
+    input.value = currentAlt
+
+    const apply = document.createElement('button')
+    apply.type = 'button'
+    apply.className = 'wryte-context-item'
+    apply.textContent = 'Apply'
+
+    const remove = document.createElement('button')
+    remove.type = 'button'
+    remove.className = 'wryte-context-item'
+    remove.textContent = 'Remove'
+
+    const applyAlt = (): void => {
+      this.editor.setImageAlt(input.value)
+      this.close()
+      this.editor.focus()
+    }
+
+    apply.addEventListener('click', applyAlt)
+    remove.addEventListener('click', () => {
+      this.editor.setImageAlt('')
+      this.close()
+      this.editor.focus()
+    })
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') applyAlt()
+      if (event.key === 'Escape') {
+        // Focus the editor back but don't let the still-selected image reopen
+        // the bubble (see `handleFocus`).
+        this.suppressNextFocusOpen = true
         this.close()
         this.editor.focus()
       }

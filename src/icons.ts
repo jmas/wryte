@@ -18,6 +18,8 @@ export type IconName =
   | 'attach'
   | 'plus'
   | 'hr'
+  | 'edit'
+  | 'trash'
 
 export const ICONS: Record<IconName, string> = {
   bold: '<path d="M7 5h6a3.5 3.5 0 0 1 0 7h-6l0 -7" /><path d="M13 12h1a3.5 3.5 0 0 1 0 7h-7v-7" />',
@@ -39,6 +41,8 @@ export const ICONS: Record<IconName, string> = {
   attach: '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" /><path d="M7 9l5 -5l5 5" /><path d="M12 4l0 12" />',
   plus: '<path d="M12 5l0 14" /><path d="M5 12l14 0" />',
   hr: '<path d="M5 12l14 0" />',
+  edit: '<path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1" /><path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415" /><path d="M16 5l3 3" />',
+  trash: '<path d="M4 7l16 0" /><path d="M10 11l0 6" /><path d="M14 11l0 6" /><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" /><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />',
 }
 
 export function iconMarkup(name: IconName, size = 16): string {

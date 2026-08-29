@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { NodeSelection, TextSelection } from 'prosemirror-state'
-import { Editor, config, registerElement, Wryte } from '../src/index'
+import { Editor, config, registerElement, Wryte, schema } from '../src/index'
 
 function makeEditor(value = '', options: Record<string, unknown> = {}): Editor {
   const element = document.createElement('div')
@@ -83,6 +83,7 @@ describe('Editor', () => {
       'getClientRectAtPosition', 'moveCursorInDirection', 'expandSelectionInDirection',
       'activateAttribute', 'attributeIsActive', 'canActivateAttribute',
       'deactivateAttribute', 'toggleAttribute', 'setLink', 'unlink', 'setBlockCode',
+      'setImageAlt',
       'canDecreaseNestingLevel', 'canIncreaseNestingLevel', 'decreaseNestingLevel',
       'increaseNestingLevel', 'canRedo', 'canUndo', 'undo', 'redo', 'recordUndoEntry',
       'focus', 'blur', 'disable', 'enable', 'clear', 'dispatch',
@@ -117,6 +118,45 @@ describe('Editor', () => {
     expect(editor.toMarkdown()).toContain('[Some](https://example.com)')
     editor.setSelectedRange([0, 4])
     expect(editor.attributeIsActive('href')).toBe(true)
+  })
+
+  it('sets the alt text on a selected block image and clears it with whitespace', () => {
+    editor.loadDocument(
+      schema.nodeFromJSON({
+        type: 'doc',
+        content: [
+          { type: 'paragraph' },
+          {
+            type: 'image',
+            attrs: { url: 'https://example.com/x.png', alt: 'old', filename: 'x.png', contentType: 'image/png' },
+          },
+          { type: 'paragraph' },
+        ],
+      }),
+    )
+    const doc = editor.editorView.state.doc
+    let imgPos = -1
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'image' && imgPos === -1) {
+        imgPos = pos
+        return false
+      }
+    })
+    expect(imgPos).toBeGreaterThan(-1)
+    editor.editorView.dispatch(editor.editorView.state.tr.setSelection(NodeSelection.create(doc, imgPos)))
+
+    editor.setImageAlt('  new alt  ')
+    expect(editor.toMarkdown()).toContain('![new alt](https://example.com/x.png)')
+
+    editor.setImageAlt('   ')
+    expect(editor.toMarkdown()).toContain('![x.png](https://example.com/x.png)')
+  })
+
+  it('does nothing when setImageAlt is called without a selected image', () => {
+    editor.loadMarkdown('some text\n\n![old](https://example.com/x.png)')
+    editor.setSelectedRange([0, 1])
+    editor.setImageAlt('nope')
+    expect(editor.toMarkdown()).toBe('some text\n\n![old](https://example.com/x.png)')
   })
 
   it('toggles block attributes', () => {
