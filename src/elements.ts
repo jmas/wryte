@@ -1,5 +1,6 @@
 import { Editor } from './editor'
 import type { EditorOptions } from './editor'
+import { ALL_ABILITIES } from './editor'
 
 let toolbarElementDefined = false
 let editorElementDefined = false
@@ -67,6 +68,13 @@ export function registerEditorElement(name = 'wryte-editor'): void {
       if (this.hasAttribute('placeholder')) options.placeholder = this.getAttribute('placeholder') ?? undefined
       if (this.hasAttribute('toolbar')) options.toolbar = this.getAttribute('toolbar') ?? undefined
       if (this.hasAttribute('autofocus')) options.autofocus = true
+      if (this.hasAttribute('abilities')) {
+        // Comma-separated whitelist, e.g. `abilities="bold, italic, link"`.
+        options.abilities = (this.getAttribute('abilities') ?? '')
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter((entry): entry is (typeof ALL_ABILITIES)[number] => (ALL_ABILITIES as readonly string[]).includes(entry))
+      }
 
       this.#editor = new Editor(this, options)
       if (this.hasAttribute('disabled')) this.#editor.disable()

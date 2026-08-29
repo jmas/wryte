@@ -1,5 +1,7 @@
 export { Editor, config } from './editor.js'
 export type { EditorConfig, EditorOptions, EditorSelection, EditorSnapshot } from './editor.js'
+export type { Ability } from './editor.js'
+export { ALL_ABILITIES } from './editor.js'
 export { registerElement, registerEditorElement, registerToolbarElement } from './elements.js'
 export { Attachment } from './attachment.js'
 export type { AttachmentDelegate } from './attachment.js'

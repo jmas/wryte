@@ -19,11 +19,6 @@ const LABELS: Record<string, string> = {
   trash: 'Remove image',
 }
 
-// The emphasis button (bold -> italic -> strike) and the code/spoiler button
-// cycle like the heading button, so each is a single toggle-style button.
-const TEXT_ATTRIBUTES: IconName[] = ['bold', 'code']
-const BLOCK_ATTRIBUTES: IconName[] = ['heading2', 'quote', 'bullet']
-
 let stylesInjected = false
 
 function ensureStyles(): void {
@@ -273,6 +268,20 @@ export class ContextMenuController {
     return active != null && this.editor.element.contains(active)
   }
 
+  // True when any of the block-insertion actions is enabled. The (+) button on
+  // an empty line is pointless (and must not open an empty popup) when the
+  // whitelist disabled every block ability.
+  private hasAnyBlockAbility(): boolean {
+    return (
+      this.editor.abilityEnabled('attach') ||
+      this.editor.abilityEnabled('codeBlock') ||
+      this.editor.abilityEnabled('quote') ||
+      this.editor.abilityEnabled('heading') ||
+      this.editor.abilityEnabled('horizontalRule') ||
+      this.editor.abilityEnabled('list')
+    )
+  }
+
   private caretInEmptyBlock(state: EditorState): boolean {
     if (!state.selection.empty) return false
     const block = state.selection.$from.parent
@@ -282,6 +291,7 @@ export class ContextMenuController {
   // --- Inline (+) button for empty lines ---
 
   private showPlusButton(): void {
+    if (!this.hasAnyBlockAbility()) return
     if (!this.plusButton) {
       this.plusButton = document.createElement('button')
       this.plusButton.type = 'button'
@@ -467,8 +477,14 @@ export class ContextMenuController {
   private openMenu(x: number, y: number, anchor: Anchor, mode: MenuMode, placement: 'above' | 'right' = 'above'): void {
     this.close()
     this.hidePlusButton()
-    this.anchor = anchor
     const menu = this.buildMenu(mode)
+    if (!menu) {
+      // No enabled ability maps to a button for this mode (e.g. an image was
+      // right-clicked while the `image` ability is off), so there is nothing
+      // to show. `buildMenu` returning null does not change the selection.
+      return
+    }
+    this.anchor = anchor
     // Keep the editor focused while pressing menu buttons: a real browser moves
     // focus to the button on mousedown, the editor blur fires `handleFocusOut`,
     // the menu closes, and the click that would run the action never fires.
@@ -543,30 +559,67 @@ export class ContextMenuController {
     }
   }
 
-  private buildMenu(mode: MenuMode): HTMLElement {
+  // Builds the popup for the given mode, showing only the buttons whose
+  // ability is enabled (`editor.abilityEnabled`). Returns null when no enabled
+  // ability maps to a button, in which case no menu opens.
+  private buildMenu(mode: MenuMode): HTMLElement | null {
     const menu = document.createElement('div')
     menu.className = 'wryte-context-menu'
     menu.setAttribute('role', mode === 'format' ? 'toolbar' : 'menu')
 
     if (mode === 'image') {
       // The image tools bubble mirrors Trix's attachment toolbar: edit the alt
-      // text (caption) or remove the image.
+      // text (caption) or remove the image. Gated on the `image` ability.
+      if (!this.editor.abilityEnabled('image')) return null
       menu.appendChild(this.imageItem('edit'))
       menu.appendChild(this.imageItem('trash'))
-    } else if (mode === 'block') {
-      menu.appendChild(this.blockItem('attach'))
-      menu.appendChild(this.divider())
-      menu.appendChild(this.blockItem('code'))
-      menu.appendChild(this.blockItem('quote'))
-      menu.appendChild(this.blockItem('heading2'))
-      menu.appendChild(this.blockItem('hr'))
-      menu.appendChild(this.blockListButton())
-    } else {
-      for (const name of TEXT_ATTRIBUTES) menu.appendChild(this.iconAttributeItem(name))
-      menu.appendChild(this.iconLinkItem())
-      menu.appendChild(this.divider())
-      for (const name of BLOCK_ATTRIBUTES) menu.appendChild(this.iconAttributeItem(name))
+      return menu
     }
+
+    if (mode === 'block') {
+      // The block-insertion popup mirrors the bubble's block group: attachment
+      // first, a divider, then the block-formatting actions.
+      const attachAllowed = this.editor.abilityEnabled('attach')
+      const actions: Array<[IconName, boolean]> = [
+        ['code', this.editor.abilityEnabled('codeBlock')],
+        ['quote', this.editor.abilityEnabled('quote')],
+        ['heading2', this.editor.abilityEnabled('heading')],
+        ['hr', this.editor.abilityEnabled('horizontalRule')],
+        ['bullet', this.editor.abilityEnabled('list')],
+      ]
+      const enabled = actions.filter(([, allowed]) => allowed)
+      if (!attachAllowed && enabled.length === 0) return null
+      if (attachAllowed) menu.appendChild(this.blockItem('attach'))
+      if (attachAllowed && enabled.length > 0) menu.appendChild(this.divider())
+      for (const [name] of enabled) {
+        // The list button cycles paragraph -> bullet -> number -> paragraph, so
+        // it gets the special list action rather than a plain `bullet` toggle.
+        if (name === 'bullet') menu.appendChild(this.blockListButton())
+        else menu.appendChild(this.blockItem(name))
+      }
+      return menu
+    }
+
+    // Formatting bubble: the emphasis button (bold/italic/strike cycle) and the
+    // code/spoiler button each appear when any of their marks is enabled; the
+    // link button needs the `link` ability. The block-formatting group (heading,
+    // quote, list) mirrors the block popup.
+    const emphasis = (['bold', 'italic', 'strike'] as const).some((name) => this.editor.abilityEnabled(name))
+    const codeSpoiler = (['spoiler', 'code'] as const).some((name) => this.editor.abilityEnabled(name))
+    const link = this.editor.abilityEnabled('link')
+    const blocks: Array<[IconName, boolean]> = [
+      ['heading2', this.editor.abilityEnabled('heading')],
+      ['quote', this.editor.abilityEnabled('quote')],
+      ['bullet', this.editor.abilityEnabled('list')],
+    ]
+    const blockButtons = blocks.filter(([, allowed]) => allowed)
+    const inlineCount = (emphasis ? 1 : 0) + (codeSpoiler ? 1 : 0) + (link ? 1 : 0)
+    if (inlineCount === 0 && blockButtons.length === 0) return null
+    if (emphasis) menu.appendChild(this.iconAttributeItem('bold'))
+    if (codeSpoiler) menu.appendChild(this.iconAttributeItem('code'))
+    if (link) menu.appendChild(this.iconLinkItem())
+    if (inlineCount > 0 && blockButtons.length > 0) menu.appendChild(this.divider())
+    for (const [name] of blockButtons) menu.appendChild(this.iconAttributeItem(name))
 
     return menu
   }
@@ -896,7 +949,7 @@ export class ContextMenuController {
     // caret is still in an empty block (and the editor is focused and
     // editable), bring the (+) button back — e.g. after the block popup is
     // dismissed with Escape or an outside click.
-    if (this.editorFocused() && this.editor.options.editable !== false) {
+    if (this.editorFocused() && this.editor.options.editable !== false && this.hasAnyBlockAbility()) {
       const state = this.editor.editorView.state
       if (this.caretInEmptyBlock(state)) this.showPlusButton()
     }

@@ -105,6 +105,47 @@ const BLOCK_ATTRIBUTE_NAMES = [
   'heading6',
 ]
 
+// Editor capabilities, sandbox-style: `abilities: ['bold', 'link', ...]` is a
+// whitelist of what the editor may do. Anything not listed is disabled — the
+// corresponding formatting operations become no-ops and the buttons that would
+// trigger them are hidden from the context menu / popups. When `abilities` is
+// omitted every capability is enabled.
+export type Ability =
+  // Inline text marks
+  | 'bold'
+  | 'italic'
+  | 'strike'
+  | 'spoiler'
+  | 'code'
+  | 'link'
+  // Block formatting
+  | 'heading'
+  | 'quote'
+  | 'list'
+  | 'codeBlock'
+  // Insertions
+  | 'horizontalRule'
+  | 'attach'
+  | 'embed'
+  | 'image'
+
+export const ALL_ABILITIES: readonly Ability[] = [
+  'bold',
+  'italic',
+  'strike',
+  'spoiler',
+  'code',
+  'link',
+  'heading',
+  'quote',
+  'list',
+  'codeBlock',
+  'horizontalRule',
+  'attach',
+  'embed',
+  'image',
+]
+
 export interface EditorOptions {
   autofocus?: boolean
   disableSpellcheck?: boolean
@@ -117,6 +158,9 @@ export interface EditorOptions {
   value?: string
   html?: string
   editable?: boolean
+  // Whitelist of allowed capabilities. `undefined`/`null` enables everything;
+  // an array restricts the editor to exactly those abilities.
+  abilities?: Ability[]
 }
 
 export interface EditorConfig {
@@ -129,6 +173,7 @@ export interface EditorConfig {
   contextMenu: boolean
   uploadTimeout: number | null
   editable: boolean
+  abilities: Ability[] | null
 }
 
 export const config: EditorConfig = {
@@ -141,6 +186,7 @@ export const config: EditorConfig = {
   contextMenu: true,
   uploadTimeout: null,
   editable: true,
+  abilities: null,
 }
 
 export interface EditorSelection {
@@ -486,31 +532,40 @@ export class Editor implements AttachmentDelegate {
   }
 
   private plugins() {
+    const rules: InputRule[] = []
+    // Markdown input rules are abilities too: with the capability disabled, the
+    // `# ` / `> ` / `- ` / `1. ` / URL-on-a-line transformations do not fire.
+    if (this.abilityEnabled('heading')) {
+      rules.push(textblockTypeInputRule(/^(#{1,6})\s$/, headingType, (match) => ({ level: match[1].length >= 3 ? 3 : 2 })))
+    }
+    if (this.abilityEnabled('quote')) rules.push(blockquoteInputRule())
+    if (this.abilityEnabled('embed')) rules.push(embedInputRule())
+    if (this.abilityEnabled('list')) {
+      rules.push(wrappingInputRule(/^\s*([-+*])\s$/, bulletListType))
+      rules.push(
+        wrappingInputRule(
+          /^(\d+)\.\s$/,
+          orderedListType,
+          (match) => ({ order: Number(match[1]) }),
+          (match, node) => node.childCount + Number(match[1]) === 1,
+        ),
+      )
+    }
+
+    const disabledCommand = (): boolean => false
     return [
       history(),
       gapCursor(),
       selectionHighlightPlugin(),
-      inputRules({
-        rules: [
-          textblockTypeInputRule(/^(#{1,6})\s$/, headingType, (match) => ({ level: match[1].length >= 3 ? 3 : 2 })),
-          blockquoteInputRule(),
-          embedInputRule(),
-          wrappingInputRule(/^\s*([-+*])\s$/, bulletListType),
-          wrappingInputRule(
-            /^(\d+)\.\s$/,
-            orderedListType,
-            (match) => ({ order: Number(match[1]) }),
-            (match, node) => node.childCount + Number(match[1]) === 1,
-          ),
-        ],
-      }),
+      inputRules({ rules }),
       keymap({
-        'Mod-b': toggleMark(boldMark),
-        'Mod-i': toggleMark(italicMark),
+        'Mod-b': this.abilityEnabled('bold') ? toggleMark(boldMark) : disabledCommand,
+        'Mod-i': this.abilityEnabled('italic') ? toggleMark(italicMark) : disabledCommand,
         'Mod-z': undoCommand,
         'Shift-Mod-z': redoCommand,
         'Mod-y': redoCommand,
         'Mod-k': () => {
+          if (!this.abilityEnabled('link')) return false
           this.toolbarController?.toggleLinkDialog()
           return true
         },
@@ -891,6 +946,7 @@ export class Editor implements AttachmentDelegate {
   }
 
   insertHorizontalRule(): void {
+    if (!this.abilityEnabled('horizontalRule')) return
     const state = this.view.state
     const { $from } = state.selection
     // Replace the block containing the caret with the rule plus a fresh empty
@@ -920,6 +976,7 @@ export class Editor implements AttachmentDelegate {
   }
 
   private insertEmbedUrl(url: string): boolean {
+    if (!this.abilityEnabled('embed')) return false
     const trimmed = url.trim()
     if (!trimmed) return false
     const state = this.view.state
@@ -1007,6 +1064,7 @@ export class Editor implements AttachmentDelegate {
 
   insertAttachments(attachments: Attachment[]): void {
     if (!attachments.length) return
+    if (!this.abilityEnabled('attach')) return
     const state = this.view.state
     const nodes: PMNode[] = []
     for (const attachment of attachments) {
@@ -1014,8 +1072,11 @@ export class Editor implements AttachmentDelegate {
       if (file) this.pendingFiles.set(attachment.id, file)
       const attrs = attachment.getAttributes() as unknown as Record<string, unknown>
       // Previewable (image) attachments are block nodes that stand on their own
-      // line; everything else stays inline inside the paragraph.
-      const type = attachment.isPreviewable() ? imageType : attachmentType
+      // line; everything else stays inline inside the paragraph. With the
+      // `image` ability disabled, previewable files degrade to inline file
+      // links instead of embedded block images.
+      const previewable = attachment.isPreviewable() && this.abilityEnabled('image')
+      const type = previewable ? imageType : attachmentType
       nodes.push(type.create(attrs))
     }
     // Replace the selection with the first node, then insert the rest right
@@ -1060,6 +1121,7 @@ export class Editor implements AttachmentDelegate {
   }
 
   insertFiles(files: FileList | File[]): void {
+    if (!this.abilityEnabled('attach')) return
     const accepted: Attachment[] = []
     for (const file of Array.from(files)) {
       let reason: string | null = null
@@ -1113,7 +1175,44 @@ export class Editor implements AttachmentDelegate {
     return schema.marks[name] ?? null
   }
 
+  // True when the given capability is enabled for this editor. `abilities` is
+  // a whitelist: `null` (the default) enables everything, an array restricts
+  // the editor to exactly the listed abilities. The UI (context menu, popups)
+  // and the formatting operations themselves are gated on this.
+  abilityEnabled(ability: Ability): boolean {
+    const { abilities } = this.options
+    return abilities == null || abilities.includes(ability)
+  }
+
+  // The ability behind a Trix-style attribute name. `code` is ambiguous (inline
+  // mark vs. block code_block), so its ability depends on the selection.
+  private attributeAllowed(name: string): boolean {
+    switch (name) {
+      case 'bold':
+        return this.abilityEnabled('bold')
+      case 'italic':
+        return this.abilityEnabled('italic')
+      case 'strike':
+        return this.abilityEnabled('strike')
+      case 'spoiler':
+        return this.abilityEnabled('spoiler')
+      case 'href':
+        return this.abilityEnabled('link')
+      case 'quote':
+        return this.abilityEnabled('quote')
+      case 'bullet':
+      case 'number':
+        return this.abilityEnabled('list')
+      case 'code':
+        if (this.selectionCoversWholeBlocks(this.view.state)) return this.abilityEnabled('codeBlock')
+        return this.abilityEnabled('code')
+      default:
+        return /^heading[1-6]$/.test(name) ? this.abilityEnabled('heading') : true
+    }
+  }
+
   canActivateAttribute(name: string): boolean {
+    if (!this.attributeAllowed(name)) return false
     if (name === 'code') {
       const state = this.view.state
       if (!this.selectionCoversWholeBlocks(state)) return true
@@ -1138,6 +1237,7 @@ export class Editor implements AttachmentDelegate {
   }
 
   activateAttribute(name: string, value: boolean | string = true): void {
+    if (!this.attributeAllowed(name)) return
     if (name === 'code') {
       if (this.selectionCoversWholeBlocks(this.view.state)) {
         this.runCommand((state, dispatch) => this.codeBlockFromSelection(state, dispatch))
@@ -1215,6 +1315,7 @@ export class Editor implements AttachmentDelegate {
     // number -> paragraph. The emphasis button (bold -> italic -> strike) and
     // the code/spoiler button cycle the same way.
     // `deactivateAttribute` remains for an explicit un-heading / un-list.
+    if (!this.attributeAllowed(name)) return
     if (/^heading[1-6]$/.test(name)) this.activateAttribute(name)
     else if (name === 'bullet') this.cycleListAttribute()
     else if (name === 'bold') this.cycleBoldItalicStrike()
@@ -1223,26 +1324,40 @@ export class Editor implements AttachmentDelegate {
     else this.activateAttribute(name)
   }
 
-  // Cycles the emphasis button through bold -> italic -> strike -> none,
-  // mirroring the heading cycle. The mark is force-set (not toggled) so
-  // switching from bold to italic never leaves text bolded.
+  // Cycles the emphasis button through the *enabled* subset of
+  // bold -> italic -> strike -> none, mirroring the heading cycle. The mark is
+  // force-set (not toggled) so switching from bold to italic never leaves text
+  // bolded. Disabled styles are skipped in the cycle but cleared when a step
+  // runs (the group is always the full set).
   private cycleBoldItalicStrike(): void {
+    const steps: Mark['type'][] = []
+    if (this.abilityEnabled('bold')) steps.push(boldMark)
+    if (this.abilityEnabled('italic')) steps.push(italicMark)
+    if (this.abilityEnabled('strike')) steps.push(strikeMark)
+    if (!steps.length) return
     const group = [boldMark, italicMark, strikeMark]
-    if (this.attributeIsActive('strike')) this.setOneOfMarks(group, null)
-    else if (this.attributeIsActive('italic')) this.setOneOfMarks(group, strikeMark)
-    else if (this.attributeIsActive('bold')) this.setOneOfMarks(group, italicMark)
-    else this.setOneOfMarks(group, boldMark)
+    const activeIndex = steps.findIndex((mark) => markIsActive(this.view.state, mark))
+    if (activeIndex === -1) this.setOneOfMarks(group, steps[0])
+    else if (activeIndex + 1 === steps.length) this.setOneOfMarks(group, null)
+    else this.setOneOfMarks(group, steps[activeIndex + 1])
   }
 
-  // Cycles the code/spoiler button through spoiler -> code -> none.
+  // Cycles the code/spoiler button through the *enabled* subset of
+  // spoiler -> code -> none. `code` may resolve to the inline mark or the block
+  // code_block (whole-block selections), so it is enabled by either ability.
   private cycleCodeSpoiler(): void {
+    const canSpoiler = this.abilityEnabled('spoiler')
+    const canCode = this.abilityEnabled('code') || this.abilityEnabled('codeBlock')
+    if (!canSpoiler && !canCode) return
     if (this.attributeIsActive('code')) {
       this.deactivateAttribute('code')
     } else if (this.attributeIsActive('spoiler')) {
       this.deactivateAttribute('spoiler')
-      this.activateAttribute('code')
-    } else {
+      if (canCode) this.activateAttribute('code')
+    } else if (canSpoiler) {
       this.activateAttribute('spoiler')
+    } else {
+      this.activateAttribute('code')
     }
   }
 
@@ -1281,6 +1396,7 @@ export class Editor implements AttachmentDelegate {
 
   // Cycles the current block through paragraph -> bullet -> number -> paragraph.
   private cycleListAttribute(): void {
+    if (!this.abilityEnabled('list')) return
     const { $from } = this.view.state.selection
     for (let depth = $from.depth; depth > 0; depth--) {
       const node = $from.node(depth)
@@ -1318,6 +1434,7 @@ export class Editor implements AttachmentDelegate {
   // image node). An empty/whitespace value clears the alt. A no-op when the
   // selection is not a block image.
   setImageAlt(alt: string): void {
+    if (!this.abilityEnabled('image')) return
     const state = this.view.state
     const { selection } = state
     if (!(selection instanceof NodeSelection) || selection.node.type !== imageType) return
@@ -1328,6 +1445,7 @@ export class Editor implements AttachmentDelegate {
   }
 
   setLink(href: string): void {
+    if (!this.abilityEnabled('link')) return
     const state = this.view.state
     const { from, to } = state.selection
     if (from === to) {
@@ -1344,6 +1462,7 @@ export class Editor implements AttachmentDelegate {
   // popup). Unlike `activateAttribute('code')` this always converts the block
   // to a code_block, even with a collapsed caret.
   setBlockCode(): void {
+    if (!this.abilityEnabled('codeBlock')) return
     const state = this.view.state
     if (this.selectionCoversWholeBlocks(state)) {
       this.runCommand((s, dispatch) => this.codeBlockFromSelection(s, dispatch))

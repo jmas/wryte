@@ -42,7 +42,7 @@ editor.toMarkdown() // the current value
 editor.loadMarkdown("## New content")
 ```
 
-Supported attributes: `value`, `name`, `placeholder`, `input` (id of a hidden `<input>` that holds the initial markdown and receives updates — Trix-style), `toolbar` (id of an existing toolbar element), `autofocus`, `disabled`, `required`.
+Supported attributes: `value`, `name`, `placeholder`, `input` (id of a hidden `<input>` that holds the initial markdown and receives updates — Trix-style), `toolbar` (id of an existing toolbar element), `autofocus`, `disabled`, `required`, `abilities` (comma-separated whitelist, see [Abilities](#abilities)).
 
 ## Uploads
 
@@ -119,6 +119,47 @@ All events bubble and are namespaced `wryte-*`: `wryte-before-initialize`, `wryt
 
 The editor parses and serializes a deliberately small, Trix-shaped markdown subset: headings `#`–`######`, bold `**`, italic `*`, strikethrough `~~`, spoiler `||text||` (hidden until hover), inline code `` ` ``, fenced code blocks ```` ```lang ````, bullet and numbered lists, blockquotes, links `[text](url)`, images `![alt](url)` (which round-trip as attachments), and a lone URL on a line (which becomes an embed card). Inline HTML is treated as literal text.
 
+## Abilities (sandbox whitelist)
+
+Trix exposes no built-in way to restrict which formatting an editor supports — it only customizes the toolbar markup. wryte adds an `abilities` option for exactly that: a sandbox-style **whitelist** of what the editor may do. By default (option omitted) every capability is enabled; pass an array and the editor is restricted to exactly the listed abilities.
+
+```js
+import { Editor } from "@jmas/wryte"
+
+const editor = new Editor(mount, {
+  abilities: ["bold", "italic", "link", "quote", "list"],
+})
+```
+
+```html
+<wryte-editor abilities="bold, italic, link, quote, list"></wryte-editor>
+```
+
+Available abilities:
+
+| Ability | Enables |
+| --- | --- |
+| `bold`, `italic`, `strike` | The emphasis button (cycles through the enabled styles) and `Mod-b` / `Mod-i` |
+| `spoiler` | The `||text||` mark (half of the code/spoiler button) |
+| `code` | The inline `` `code` `` mark (half of the code/spoiler button) |
+| `link` | The link button/form, `setLink`, `Mod-k` |
+| `heading` | Headings 2–3: `# ` input rule, the heading button, the (+) popup entry |
+| `quote` | Blockquotes: `> ` input rule, the quote button |
+| `list` | Bullet and numbered lists: `- ` / `1. ` input rules, the list buttons |
+| `codeBlock` | Block-level code: the (+) popup code button, whole-block `code` |
+| `horizontalRule` | `insertHorizontalRule` and the (+) popup rule entry |
+| `attach` | File insertion: `insertFiles`, dropping or pasting files |
+| `embed` | URL → link-card: typing/pasting a lone URL on an empty line |
+| `image` | Block images: previewable files become block images, the image-tools bubble (alt text / remove) |
+
+What a disabled ability means:
+
+- **No UI**: the button that would trigger it is hidden from the bubble menu, the (+) block-insertion popup, and the image-tools bubble (a popup with no enabled buttons never opens, and the (+) button disappears entirely when no block ability is on).
+- **No operation**: the editor methods that apply it become no-ops (`activateAttribute`, `toggleAttribute`, `setLink`, `setBlockCode`, `insertHorizontalRule`, `insertEmbed`, `insertFiles`, `setImageAlt`, …), and `canActivateAttribute` returns `false`. Keyboard shortcuts (`Mod-b`, `Mod-i`, `Mod-k`) and the markdown input rules (`# `, `> `, `- `, `1. `, URL-on-a-line) are gated the same way.
+- **No side effects**: with `attach` off, dropped/pasted files are ignored; with `image` off, previewable files are inserted as inline file links instead of embedded block images.
+- **Existing content is preserved**: loaded markdown round-trips even when an ability is disabled — you just can't *create* that formatting. Stripping it back (`deactivateAttribute`, unlink, heading → paragraph) always works.
+- `abilities: []` disables everything, leaving a plain-text editor. `editor.abilityEnabled(name)` tells you whether an ability is on, and the exported `Ability` type / `ALL_ABILITIES` list the possible values. `code` is selection-aware: partial selections use the inline mark, whole-block selections the code block.
+
 ## Bubble menu & block insertion
 
 Formatting follows the editor:
@@ -127,7 +168,7 @@ Formatting follows the editor:
 - **Caret in an empty line** → an inline **(+)** button appears on the right of the line; clicking it opens a block-insertion popup with **attachment, code, quote, heading and lists** only.
 - **Right-click / long-press** → a context menu opens at the pointer (block popup in an empty line, formatting bubble otherwise).
 
-Enabled by default (`contextMenu: false` to disable).
+Enabled by default (`contextMenu: false` to disable). When an `abilities` whitelist is set, only the buttons for enabled abilities are shown.
 
 ## Toolbar (optional)
 

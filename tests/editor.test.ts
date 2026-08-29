@@ -39,6 +39,7 @@ describe('exports', () => {
       contextMenu: true,
       uploadTimeout: null,
       editable: true,
+      abilities: null,
     })
     expect(registerElement).toBeTypeOf('function')
     expect(Wryte.Editor).toBe(Editor)

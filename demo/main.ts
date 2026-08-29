@@ -5,6 +5,11 @@ const output = document.querySelector<HTMLElement>('#output')
 const log = document.querySelector<HTMLElement>('#log')
 if (!element || !output || !log) throw new Error('preview page is missing #editor, #output or #log')
 
+const restricted = document.querySelector<HTMLElement & { editor: Editor | null; value: string }>('#restricted')
+const restrictedOutput = document.querySelector<HTMLElement>('#restricted-output')
+if (!restricted || !restrictedOutput) throw new Error('preview page is missing #restricted or #restricted-output')
+const restrictedOutputEl = restrictedOutput
+
 const outputEl = output
 const logEl = log
 
@@ -12,8 +17,13 @@ const editor = element.editor
 if (!editor) throw new Error('wryte-editor did not initialize')
 const editorInstance: Editor = editor
 
+const restrictedEditor = restricted.editor
+if (!restrictedEditor) throw new Error('restricted wryte-editor did not initialize')
+const restrictedEditorInstance: Editor = restrictedEditor
+
 function render(): void {
   outputEl.textContent = editorInstance.toMarkdown()
+  restrictedOutputEl.textContent = restrictedEditorInstance.toMarkdown()
 }
 
 const recentEvents: string[] = []

@@ -115,6 +115,20 @@ describe('wryte-editor custom element', () => {
     const editor = (wrapper.querySelector('wryte-editor')! as unknown as { editor: Editor }).editor
     expect(editor.toMarkdown()).toBe('## from attribute')
   })
+
+  it('parses the abilities attribute into a whitelist', () => {
+    const wrapper = makeElement('<wryte-editor abilities="bold, italic, quote"></wryte-editor>')
+    const editor = (wrapper.querySelector('wryte-editor')! as unknown as { editor: Editor }).editor
+    expect(editor.options.abilities).toEqual(['bold', 'italic', 'quote'])
+    expect(editor.abilityEnabled('bold')).toBe(true)
+    expect(editor.abilityEnabled('link')).toBe(false)
+  })
+
+  it('ignores unknown abilities in the abilities attribute', () => {
+    const wrapper = makeElement('<wryte-editor abilities="bold, underline, nope"></wryte-editor>')
+    const editor = (wrapper.querySelector('wryte-editor')! as unknown as { editor: Editor }).editor
+    expect(editor.options.abilities).toEqual(['bold'])
+  })
 })
 
 describe('form association', () => {

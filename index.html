@@ -22,6 +22,14 @@
       <pre id="output" class="output"></pre>
       <h2>Events</h2>
       <pre id="log" class="log"></pre>
+      <h2>Restricted editor (abilities whitelist)</h2>
+      <p>
+        This editor is sandboxed with <code>abilities="bold, italic, strike, quote, list"</code>:
+        only those formatting capabilities are enabled, so the bubble, the (+) popup, headings,
+        links, code and embeds are all unavailable.
+      </p>
+      <wryte-editor id="restricted" class="editor prose" abilities="bold, italic, strike, quote, list" placeholder="Plain + bold/italic/strike/quote/list only…" value="**Bold** and *italic* work here."></wryte-editor>
+      <pre id="restricted-output" class="output"></pre>
     </main>
     <script type="module" src="/demo/main.ts"></script>
   </body>
