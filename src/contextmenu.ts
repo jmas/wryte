@@ -870,6 +870,8 @@ export class ContextMenuController {
     input.type = 'url'
     input.className = 'wryte-context-link-input'
     input.placeholder = 'https://example.com'
+    const current = this.editor.currentLinkHref()
+    if (current) input.value = current
 
     const apply = document.createElement('button')
     apply.type = 'button'

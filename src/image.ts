@@ -13,6 +13,9 @@ export interface ImageResult {
   alt?: string | null
   width?: number | null
   height?: number | null
+  // Poster/preview image for a video-card image (a `video/*` content type),
+  // so a video URL loaded from markdown gets its placeholder face back.
+  poster?: string | null
   [key: string]: unknown
 }
 

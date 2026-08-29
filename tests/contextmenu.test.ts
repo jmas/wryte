@@ -243,6 +243,16 @@ describe('bubble menu', () => {
     expect(editor.toMarkdown()).toBe('[some](https://example.com) text')
   })
 
+  it('prefills the link form with the current link when editing', () => {
+    const editor = makeEditor('[some](https://example.com) text')
+    editor.setSelectedRange([0, 4])
+    rightClick(editor.element)
+
+    ;(menu()!.querySelector('[data-wryte-action="link"]') as HTMLButtonElement).click()
+    const input = menu()!.querySelector('.wryte-context-link-input') as HTMLInputElement
+    expect(input.value).toBe('https://example.com')
+  })
+
   it('keeps the link form open when focusing its input blurs the editor', () => {
     const editor = makeEditor()
     editor.focus()

@@ -162,6 +162,7 @@ const actions: Array<[label: string, run: () => void]> = [
   ['Insert text', () => heroEditor.insertString('text from the API ')],
   ['Insert embed', () => heroEditor.insertEmbed('https://example.com')],
   ['Insert image', () => heroEditor.insertFile(new File([''], 'demo.png', { type: 'image/png' }))],
+  ['Insert video', () => heroEditor.insertFile(new File([''], 'demo.mp4', { type: 'video/mp4' }))],
   ['Horizontal rule', () => heroEditor.insertHorizontalRule()],
   ['Toggle quote', () => heroEditor.toggleAttribute('quote')],
   ['Clear', () => heroEditor.clear()],
@@ -204,11 +205,18 @@ function bindFakeBackend(element: EditorElement): void {
   element.addEventListener('wryte-upload-request', (event) => {
     const detail = (event as CustomEvent).detail as {
       file: File
-      respond: (result: { url: string; width?: number; height?: number }) => void
+      respond: (result: { url: string; width?: number; height?: number; poster?: string }) => void
       progress: (fraction: number) => void
     }
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="100%" height="100%" fill="#dbeafe"/><text x="320" y="190" font-family="sans-serif" font-size="36" text-anchor="middle" fill="#2563eb">${detail.file.name}</text></svg>`
-    const url = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+    const poster = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+
+    // Videos are answered with a poster image (the placeholder face of the
+    // video card) plus the video's own URL.
+    const isVideo = detail.file.type.startsWith('video/')
+    const url = isVideo
+      ? 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
+      : poster
 
     let progress = 0
     const timer = setInterval(() => {
@@ -216,7 +224,7 @@ function bindFakeBackend(element: EditorElement): void {
       detail.progress(progress)
       if (progress >= 1) {
         clearInterval(timer)
-        detail.respond({ url, width: 640, height: 360 })
+        detail.respond(isVideo ? { url, poster, width: 640, height: 360 } : { url, width: 640, height: 360 })
       }
     }, 200)
   })

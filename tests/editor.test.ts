@@ -284,14 +284,26 @@ describe('Editor', () => {
     expect(editor.toMarkdown()).toContain('* two')
   })
 
-  it('converts a heading already nested in a list by lifting it out', () => {
+  it('degrades a heading inside list markdown to a paragraph on load', () => {
+    // List items may only hold paragraphs, so a heading nested in a list is
+    // flattened into the item instead of being kept (there is no heading-in-
+    // list state to convert anymore).
     editor.loadMarkdown('- ## one\n- two')
+    expect(editor.toMarkdown()).toBe('* one\n\n* two')
+    expect(editor.attributeIsActive('heading2')).toBe(false)
+    expect(editor.attributeIsActive('bullet')).toBe(true)
+  })
+
+  it('does not create a code block or heading inside a list', () => {
+    editor.loadMarkdown('- one')
     editor.setSelectedRange([2, 2])
-    editor.toggleAttribute('heading2')
+    editor.setBlockCode()
+    expect(editor.toMarkdown()).toBe('* one')
+    expect(editor.attributeIsActive('code')).toBe(false)
+    editor.activateAttribute('heading2')
     expect(editor.attributeIsActive('heading2')).toBe(true)
     expect(editor.attributeIsActive('bullet')).toBe(false)
     expect(editor.toMarkdown()).toMatch(/^## one/)
-    expect(editor.toMarkdown()).toContain('* two')
   })
 
   describe('code attribute', () => {
@@ -735,15 +747,20 @@ describe('cursor movement', () => {
 })
 
 describe('nesting', () => {
-  it('sinks and lifts list items', () => {
+  it('never sinks a list item (nested lists are forbidden)', () => {
     const editor = makeEditor('- one\n- two')
     editor.setSelectedRange([6, 6])
-    expect(editor.canIncreaseNestingLevel()).toBe(true)
+    expect(editor.canIncreaseNestingLevel()).toBe(false)
     editor.increaseNestingLevel()
-    expect(editor.toMarkdown()).toBe('* one\n  * two')
+    expect(editor.toMarkdown()).toBe('* one\n* two')
+  })
+
+  it('lifts a list item out of the list', () => {
+    const editor = makeEditor('- one\n- two')
+    editor.setSelectedRange([6, 6])
     expect(editor.canDecreaseNestingLevel()).toBe(true)
     editor.decreaseNestingLevel()
-    expect(editor.toMarkdown()).toBe('* one\n* two')
+    expect(editor.toMarkdown()).toBe('* one\n\ntwo')
   })
 
   it('reports when nesting is impossible', () => {

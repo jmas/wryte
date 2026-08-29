@@ -94,12 +94,23 @@ describe('markdown scope (Trix-limited)', () => {
     expect(roundTrip('- one\n\n- two')).toBe('* one\n\n* two')
   })
 
-  it('round-trips nested lists', () => {
-    expect(roundTrip('- one\n  - sub')).toBe('* one\n  * sub')
+  it('flattens a nested list into the parent item', () => {
+    expect(roundTrip('- one\n  - sub')).toBe('* one\n\n  sub')
   })
 
-  it('keeps an image inside a list item as a block', () => {
-    expect(roundTrip('- ![alt](https://example.com/a.png)')).toBe('* ![alt](https://example.com/a.png)')
+  it('lifts an image inside a list item out of the list', () => {
+    expect(roundTrip('- one\n- ![alt](https://example.com/a.png)')).toBe('* one\n\n![alt](https://example.com/a.png)')
+    // An item (and list) left empty by the lift is dropped entirely.
+    expect(roundTrip('- ![alt](https://example.com/a.png)')).toBe('![alt](https://example.com/a.png)')
+  })
+
+  it('degrades a heading or code block inside a list to a paragraph', () => {
+    expect(roundTrip('- ## heading')).toBe('* heading')
+    expect(roundTrip('- ```\n  code\n  ```')).toBe('* code')
+  })
+
+  it('keeps a URL inside a list as plain text', () => {
+    expect(roundTrip('- https://example.com')).toBe('* https://example.com')
   })
 
   it('degrades an image inside a blockquote to its alt text', () => {

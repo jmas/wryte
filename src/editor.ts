@@ -18,7 +18,7 @@ import {
 } from 'prosemirror-commands'
 import { InputRule, inputRules, textblockTypeInputRule, wrappingInputRule } from 'prosemirror-inputrules'
 import { findWrapping, canJoin } from 'prosemirror-transform'
-import { wrapInList, liftListItem, sinkListItem, splitListItem } from 'prosemirror-schema-list'
+import { wrapInList, liftListItem, splitListItem } from 'prosemirror-schema-list'
 import { DOMParser, DOMSerializer, Mark, Slice, Fragment, type Node as PMNode, type NodeType } from 'prosemirror-model'
 import { schema, type AttachmentAttrs } from './schema'
 import { markdownParser, markdownSerializer } from './markdown'
@@ -71,6 +71,11 @@ function injectEditorStyles(): void {
     '.wryte-image .wryte-progress{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--wryte-progress-bg)}' +
     '.wryte-image .wryte-progress[hidden]{display:none}' +
     '.wryte-image .wryte-progress svg{width:2.5rem;height:2.5rem;transform:rotate(-90deg)}' +
+    '.wryte-image .wryte-image-play{position:absolute;right:8px;bottom:8px;width:2rem;height:2rem;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;cursor:pointer}' +
+    '.wryte-image .wryte-image-play[hidden]{display:none}' +
+    '.wryte-image .wryte-image-play:hover{background:rgba(0,0,0,.7)}' +
+    '.wryte-image .wryte-image-play svg{width:1rem;height:1rem;fill:currentColor;margin-left:1px}' +
+    '.wryte-image video.wryte-video-player{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#000;margin:0}' +
     '.wryte-progress-track{fill:none;stroke:var(--wryte-progress-track);stroke-width:3}' +
     '.wryte-progress-bar{fill:none;stroke:var(--wryte-accent);stroke-width:3;stroke-linecap:round}' +
     '.ProseMirror hr{margin:1.5rem 0;height:1px;border:none;background:var(--wryte-hr)}' +
@@ -99,6 +104,7 @@ const bulletListType = nodes.bullet_list
 const orderedListType = nodes.ordered_list
 const listItemType = nodes.list_item
 const codeBlockType = nodes.code_block
+const horizontalRuleType = nodes.horizontal_rule
 const attachmentType = nodes.attachment
 const imageType = nodes.image
 const embedType = nodes.embed
@@ -145,6 +151,7 @@ export type Ability =
   | 'attach'
   | 'embed'
   | 'image'
+  | 'video'
 
 export const ALL_ABILITIES: readonly Ability[] = [
   'bold',
@@ -161,6 +168,7 @@ export const ALL_ABILITIES: readonly Ability[] = [
   'attach',
   'embed',
   'image',
+  'video',
 ]
 
 export interface EditorOptions {
@@ -352,16 +360,92 @@ function blocksToParagraphs(node: PMNode): PMNode[] {
   return paragraphs
 }
 
-function normalizeBlockquoteContent(node: PMNode): PMNode {
-  if (node.isLeaf) return node
+// Rebuilds `node` into the one-or-more nodes that should occupy its slot in the
+// parent. Blockquotes may only hold paragraphs and list items may only hold
+// paragraphs, so any other block content is degraded or moved: inside a
+// blockquote, headings/code/images become paragraphs (or are dropped, for
+// rules); inside a list item, headings and code blocks become paragraphs,
+// nested lists are flattened into the item's paragraphs, horizontal rules are
+// dropped, and block images/embeds are lifted out into standalone blocks right
+// after the list. An item (or list) left with no paragraph content by a lift is
+// dropped. Applied wherever content enters the document, so out-of-schema
+// content degrades instead of being silently dropped by `createAndFill`.
+function normalizeBlockContent(node: PMNode): PMNode[] {
+  if (node.isLeaf) return [node]
+  const children: PMNode[] = []
+  node.forEach((child) => children.push(...normalizeBlockContent(child)))
+
   if (node.type === blockquoteType) {
-    const paragraphs = blocksToParagraphs(node)
-    const content = paragraphs.length ? paragraphs : [paragraphType.createAndFill() as PMNode]
-    return blockquoteType.create(node.attrs, content)
+    const paragraphs = children.flatMap((child) => blocksToParagraphs(child))
+    return [blockquoteType.create(node.attrs, paragraphs.length ? paragraphs : [paragraphType.createAndFill() as PMNode])]
   }
-  const content: PMNode[] = []
-  node.forEach((child) => content.push(normalizeBlockquoteContent(child)))
-  return node.type.create(node.attrs, content)
+  if (node.type === listItemType) {
+    const paragraphs: PMNode[] = []
+    const lifted: PMNode[] = []
+    for (const child of children) {
+      if (child.type === paragraphType) paragraphs.push(child)
+      else if (child.type === bulletListType || child.type === orderedListType) {
+        child.forEach((item) => {
+          item.forEach((block) => {
+            if (block.type === paragraphType) paragraphs.push(block)
+          })
+        })
+      } else if (child.type === headingType || child.type === codeBlockType) {
+        paragraphs.push(...blocksToParagraphs(child))
+      } else if (child.type !== horizontalRuleType) {
+        lifted.push(child)
+      }
+    }
+    if (lifted.length && !paragraphs.length) return lifted
+    if (!paragraphs.length) paragraphs.push(paragraphType.createAndFill() as PMNode)
+    return [node.type.create(node.attrs, paragraphs), ...lifted]
+  }
+  if (node.type === bulletListType || node.type === orderedListType) {
+    const items: PMNode[] = []
+    const lifted: PMNode[] = []
+    for (const child of children) {
+      if (child.type === listItemType) items.push(child)
+      else lifted.push(child)
+    }
+    // A list left with no items (every item was image-only) is dropped too; the
+    // lifted blocks take its place.
+    if (!items.length) return lifted
+    return [node.type.create(node.attrs, items), ...lifted]
+  }
+  return [node.type.create(node.attrs, dropEmptyListItemsBeforeImages(children))]
+}
+
+// The DOMParser leaves an empty list item behind when it lifts a block image
+// out of the item (`<ul><li><img></li></ul>` becomes a list with one empty item
+// followed by the image). Drop the trailing empty item then, so the HTML result
+// matches the markdown path (where an image-only item is dropped entirely).
+function dropEmptyListItemsBeforeImages(nodes: PMNode[]): PMNode[] {
+  const out: PMNode[] = []
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]
+    const next = nodes[i + 1]
+    if (next && next.type === imageType && (node.type === bulletListType || node.type === orderedListType)) {
+      const items: PMNode[] = []
+      node.forEach((item) => items.push(item))
+      while (
+        items.length &&
+        items[items.length - 1].childCount === 1 &&
+        items[items.length - 1].child(0).type === paragraphType &&
+        items[items.length - 1].child(0).content.size === 0
+      ) {
+        items.pop()
+      }
+      if (items.length) out.push(node.type.create(node.attrs, items))
+      continue
+    }
+    out.push(node)
+  }
+  return out
+}
+
+// Normalizes a full document node (see `normalizeBlockContent`).
+function normalizeDocument(node: PMNode): PMNode {
+  return normalizeBlockContent(node)[0] ?? defaultDocument()
 }
 
 // Lifting a block image out of a paragraph (`<p><a><img></a></p>`) leaves an
@@ -465,7 +549,7 @@ export class Editor implements AttachmentDelegate {
         const parsed = markdownParser.parse(text)
         if (!parsed) return new Slice(Fragment.empty, 0, 0)
         const content: PMNode[] = []
-        parsed.content.forEach((child) => content.push(normalizeBlockquoteContent(child)))
+        parsed.content.forEach((child) => content.push(...normalizeBlockContent(child)))
         return new Slice(Fragment.from(content), 0, 0)
       },
       handlePaste: (_, event) => {
@@ -554,14 +638,14 @@ export class Editor implements AttachmentDelegate {
 
   private initialDocument(): PMNode {
     if (this.options.value != null) {
-      return normalizeBlockquoteContent(markdownParser.parse(this.options.value) ?? defaultDocument())
+      return normalizeDocument(markdownParser.parse(this.options.value) ?? defaultDocument())
     }
     if (this.options.html != null) {
-      return normalizeBlockquoteContent(this.parseHTMLDocument(this.options.html))
+      return normalizeDocument(this.parseHTMLDocument(this.options.html))
     }
     const text = this.element.textContent
     if (text != null && text.trim() !== '') {
-      return normalizeBlockquoteContent(markdownParser.parse(text) ?? defaultDocument())
+      return normalizeDocument(markdownParser.parse(text) ?? defaultDocument())
     }
     return defaultDocument()
   }
@@ -628,7 +712,9 @@ export class Editor implements AttachmentDelegate {
     const template = document.createElement('template')
     template.innerHTML = html
     const content: PMNode[] = []
-    domParser.parse(template.content).content.forEach((child) => content.push(dropEmptyParagraphsBeforeImages(normalizeBlockquoteContent(child))))
+    domParser.parse(template.content).content.forEach((child) => {
+      for (const node of normalizeBlockContent(child)) content.push(dropEmptyParagraphsBeforeImages(node))
+    })
     return Fragment.from(content)
   }
 
@@ -920,7 +1006,7 @@ export class Editor implements AttachmentDelegate {
     const prevState = this.view.state
     // Recreate the state so the history stack starts fresh (mirrors Trix
     // creating a new UndoManager on load).
-    const newState = EditorState.create({ doc: normalizeBlockquoteContent(document), plugins: prevState.plugins })
+    const newState = EditorState.create({ doc: normalizeDocument(document), plugins: prevState.plugins })
     this.view.updateState(newState)
     this.afterStateChange(prevState, newState)
   }
@@ -1083,6 +1169,7 @@ export class Editor implements AttachmentDelegate {
         url: result.url ?? node.attrs.url,
         href: result.href ?? node.attrs.href,
         alt: result.alt ?? node.attrs.alt,
+        poster: result.poster ?? node.attrs.poster,
         width: result.width ?? node.attrs.width,
         height: result.height ?? node.attrs.height,
       }
@@ -1102,17 +1189,20 @@ export class Editor implements AttachmentDelegate {
     if (!attachments.length) return
     if (!this.abilityEnabled('attach')) return
     const state = this.view.state
+    const { $from } = state.selection
     const nodes: PMNode[] = []
     for (const attachment of attachments) {
       const file = attachment.getFile()
       if (file) this.pendingFiles.set(attachment.id, file)
       const attrs = attachment.getAttributes() as unknown as Record<string, unknown>
-      // Previewable (image) attachments are block nodes that stand on their own
-      // line; everything else stays inline inside the paragraph. With the
-      // `image` ability disabled, previewable files degrade to inline file
-      // links instead of embedded block images.
-      const previewable = attachment.isPreviewable() && this.abilityEnabled('image')
-      const type = previewable ? imageType : attachmentType
+      // Previewable (image) attachments — and video files, which become block
+      // image cards showing a poster preview with a play button — stand on
+      // their own line; everything else stays inline inside the paragraph.
+      // With the `image` / `video` ability disabled, those files degrade to
+      // inline file links instead of embedded block cards.
+      const video = attachment.isVideo() && this.abilityEnabled('video')
+      const previewable = !video && attachment.isPreviewable() && this.abilityEnabled('image')
+      const type = previewable || video ? imageType : attachmentType
       nodes.push(type.create(attrs))
     }
     // Replace the selection with the first node, then insert the rest right
@@ -1120,14 +1210,33 @@ export class Editor implements AttachmentDelegate {
     // insertion leaves a NodeSelection, and the next replace would overwrite
     // the previous node.)
     const first = nodes[0]
-    let tr = state.tr.replaceSelectionWith(first)
-    // The block insertion leaves a NodeSelection after the node; the mapped
-    // selection start is already the position right after it (atoms occupy a
-    // single position), so later inserts append after it.
-    let pos = tr.mapping.map(state.selection.from)
-    for (let i = 1; i < nodes.length; i++) {
-      tr = tr.insert(pos, nodes[i])
-      pos += nodes[i].nodeSize
+    let tr = state.tr
+    // Block images can't live inside a list (list items only hold paragraphs),
+    // so when the selection is in a list they are inserted after the list
+    // instead; inline attachments still land at the selection.
+    let listEnd: number | null = null
+    for (let depth = $from.depth; depth > 0; depth--) {
+      const type = $from.node(depth).type
+      if (type === bulletListType || type === orderedListType) {
+        listEnd = $from.after(depth)
+        break
+      }
+    }
+    if (listEnd != null) {
+      const blocks = nodes.filter((node) => node.type === imageType)
+      if (blocks.length) tr = tr.insert(listEnd, Fragment.from(blocks))
+      const inline = nodes.filter((node) => node.type === attachmentType)
+      if (inline.length) tr = tr.replaceSelection(new Slice(Fragment.from(inline), 0, 0))
+    } else {
+      tr = tr.replaceSelectionWith(first)
+      // The block insertion leaves a NodeSelection after the node; the mapped
+      // selection start is already the position right after it (atoms occupy a
+      // single position), so later inserts append after it.
+      let pos = tr.mapping.map(state.selection.from)
+      for (let i = 1; i < nodes.length; i++) {
+        tr = tr.insert(pos, nodes[i])
+        pos += nodes[i].nodeSize
+      }
     }
     this.view.dispatch(tr)
   }
@@ -1199,7 +1308,12 @@ export class Editor implements AttachmentDelegate {
 
   insertDocument(document: PMNode): void {
     const state = this.view.state
-    const slice = new Slice(normalizeBlockquoteContent(document).content, 0, 0)
+    const nodes = normalizeBlockContent(document)
+    // A single node keeps its old `Slice(node.content)` semantics (a doc gives
+    // its block children, a paragraph its inline content); multiple nodes
+    // (blocks lifted out of a list) are inserted together as a fragment.
+    const content = nodes.length === 1 ? nodes[0].content : Fragment.from(nodes)
+    const slice = new Slice(content, 0, 0)
     this.view.dispatch(state.tr.replaceSelection(slice))
   }
 
@@ -1506,6 +1620,11 @@ export class Editor implements AttachmentDelegate {
   setBlockCode(): void {
     if (!this.abilityEnabled('codeBlock')) return
     const state = this.view.state
+    // List items may only hold paragraphs, so never create a code block in one
+    // (a blockquote is guarded the same way in `codeBlockFromSelection`).
+    for (let depth = state.selection.$from.depth; depth > 0; depth--) {
+      if (state.selection.$from.node(depth).type === listItemType) return
+    }
     if (this.selectionCoversWholeBlocks(state)) {
       this.runCommand((s, dispatch) => this.codeBlockFromSelection(s, dispatch))
     } else {
@@ -1517,10 +1636,36 @@ export class Editor implements AttachmentDelegate {
     if (this.attributeIsActive('href')) this.runCommand(toggleMark(linkMark))
   }
 
+  // The `href` of the link mark at the selection, or null when the selection
+  // is not inside a link. Used to prefill the link form when editing.
+  currentLinkHref(): string | null {
+    const state = this.view.state
+    const { from, to } = state.selection
+    if (from === to) {
+      const link = marksAtSelection(state).find((mark) => mark.type === linkMark)
+      return typeof link?.attrs.href === 'string' ? link.attrs.href : null
+    }
+    let href: string | null = null
+    state.doc.nodesBetween(from, to, (node) => {
+      for (const mark of node.marks) {
+        if (mark.type === linkMark && typeof mark.attrs.href === 'string') {
+          href = mark.attrs.href
+          return false
+        }
+      }
+      return true
+    })
+    return href
+  }
+
   // --- Nesting ---
+  // Nested lists are forbidden by the schema (a list item only holds a
+  // paragraph), so `increaseNestingLevel`/`canIncreaseNestingLevel` are always
+  // no-ops. `decreaseNestingLevel` still works: it lifts the item out of the
+  // list entirely, which is how headings get out of a list before activation.
 
   canIncreaseNestingLevel(): boolean {
-    return sinkListItem(listItemType)(this.view.state)
+    return false
   }
 
   canDecreaseNestingLevel(): boolean {
@@ -1528,7 +1673,7 @@ export class Editor implements AttachmentDelegate {
   }
 
   increaseNestingLevel(): void {
-    this.runCommand(sinkListItem(listItemType))
+    // No-op: list items may only hold paragraphs, so nothing can be sunk.
   }
 
   decreaseNestingLevel(): void {
@@ -1580,7 +1725,7 @@ export class Editor implements AttachmentDelegate {
     const { from, $from } = state.selection
     // A blockquote may only hold paragraphs, so never create a code block in one.
     for (let depth = $from.depth; depth > 0; depth--) {
-      if ($from.node(depth).type === blockquoteType) return false
+      if ($from.node(depth).type === blockquoteType || $from.node(depth).type === listItemType) return false
     }
     const text = state.doc.textBetween(state.selection.from, state.selection.to, '\n')
     const content = text ? schema.text(text) : undefined

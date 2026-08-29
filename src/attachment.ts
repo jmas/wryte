@@ -1,4 +1,4 @@
-import { isPreviewable } from './schema'
+import { isPreviewable, isVideo } from './schema'
 import type { AttachmentAttrs } from './schema'
 
 let nextId = 1
@@ -19,6 +19,7 @@ const ATTRIBUTE_KEYS: (keyof AttachmentAttrs)[] = [
   'width',
   'height',
   'presentation',
+  'poster',
 ]
 
 function generateId(): string {
@@ -47,6 +48,7 @@ export class Attachment {
       width: null,
       height: null,
       presentation: null,
+      poster: null,
     })
     attachment.setFile(file)
     return attachment
@@ -97,6 +99,10 @@ export class Attachment {
 
   isPreviewable(): boolean {
     return isPreviewable(this.getContentType())
+  }
+
+  isVideo(): boolean {
+    return isVideo(this.getContentType())
   }
 
   getType(): 'content' | 'preview' | 'file' {
@@ -169,4 +175,5 @@ const DEFAULT_ATTRIBUTES: AttachmentAttrs = {
   width: null,
   height: null,
   presentation: null,
+  poster: null,
 }

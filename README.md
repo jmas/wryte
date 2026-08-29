@@ -145,6 +145,18 @@ document.addEventListener("wryte-upload-request", async (event) => {
 })
 ```
 
+Previewable images and video files become **block cards** standing on their own line; every other file type stays inline as a text link inside the paragraph.
+
+A video is a block image whose src is the video file: include a `poster` image URL in the response and the card shows it as the preview with a small play button in the corner; clicking the play button plays the video inline (clicking the card itself selects it, like a normal image). Without a poster the card shows a gray placeholder with the play button.
+
+```js
+document.addEventListener("wryte-upload-request", async (event) => {
+  const { file, respond } = event.detail
+  const { url, poster } = await myVideoUploader(file) // poster = thumbnail of the first frame
+  respond({ url, poster })
+})
+```
+
 Dropping files works the same way: dragging files onto the editor fires **`wryte-before-drop`** (cancelable — prevent it to ignore the whole drop) and inserts them at the drop point, then **`wryte-drop`** fires once the files are in. Pasting an image copied from your file manager (Ctrl+V) inserts it through the same pipeline — **`wryte-before-paste`** gates the file paste, then **`wryte-paste`** fires after. Files dropped/pasted with no data (plain text, or images already inside the document) fall through to ProseMirror's default handling.
 
 Lifecycle events: `wryte-file-accept` (cancelable, or call `event.detail.reject("reason")` → `wryte-file-reject`), `wryte-attachment-add`, `wryte-upload-request`, `wryte-upload-start`, `wryte-upload-progress`, `wryte-upload-success`, `wryte-upload-error`, `wryte-attachment-edit`, `wryte-attachment-remove`.
@@ -205,7 +217,7 @@ document.addEventListener("wryte-image-request", async (event) => {
 ```
 
 - `progress(fraction)` shows the existing circular progress overlay over the current image (it stays visible underneath) and hides it once you respond.
-- `respond({ url, ... })` swaps the image `src` and fires **`wryte-image-success`**; missing fields keep the current attributes.
+- `respond({ url, ... })` swaps the image `src` and fires **`wryte-image-success`**; missing fields keep the current attributes (including `poster`, so a video-card image loaded without its preview can be filled in).
 - `respond({ error: { message } })` resets the overlay, keeps the original image, and fires **`wryte-image-error`**.
 - Each URL is requested once until it leaves the document; the resolved URL is marked requested too, so a successful swap never re-fires.
 - Images uploaded through the editor (which have an attachment id) are skipped — they already go through `wryte-upload-request`.
@@ -217,6 +229,8 @@ All events bubble and are namespaced `wryte-*`: `wryte-before-initialize`, `wryt
 ## Markdown scope
 
 The editor parses and serializes a deliberately small, Trix-shaped markdown subset: headings `#`–`######`, bold `**`, italic `*`, strikethrough `~~`, spoiler `||text||` (hidden until hover), inline code `` ` ``, fenced code blocks ```` ```lang ````, bullet and numbered lists, blockquotes, links `[text](url)`, images `![alt](url)` (which round-trip as attachments), and a lone URL on a line (which becomes an embed card). Inline HTML is treated as literal text.
+
+A video card serializes like any other image — `![filename](video-url)` — so the video URL survives round-trips; a `![…](*.mp4|webm|…)` line reloads as a playable video card, and the poster preview is re-supplied through `wryte-image-request` when it isn't stored.
 
 ## Abilities (sandbox whitelist)
 
@@ -250,12 +264,13 @@ Available abilities:
 | `attach` | File insertion: `insertFiles`, dropping or pasting files |
 | `embed` | URL → link-card: typing/pasting a lone URL on an empty line |
 | `image` | Block images: previewable files become block images, the image-tools bubble (alt text / remove) |
+| `video` | Block video cards: video files become block images showing a poster preview with a play button |
 
 What a disabled ability means:
 
 - **No UI**: the button that would trigger it is hidden from the bubble menu, the (+) block-insertion popup, and the image-tools bubble (a popup with no enabled buttons never opens, and the (+) button disappears entirely when no block ability is on).
 - **No operation**: the editor methods that apply it become no-ops (`activateAttribute`, `toggleAttribute`, `setLink`, `setBlockCode`, `insertHorizontalRule`, `insertEmbed`, `insertFiles`, `setImageAlt`, …), and `canActivateAttribute` returns `false`. Keyboard shortcuts (`Mod-b`, `Mod-i`, `Mod-k`) and the markdown input rules (`# `, `> `, `- `, `1. `, URL-on-a-line) are gated the same way.
-- **No side effects**: with `attach` off, dropped/pasted files are ignored; with `image` off, previewable files are inserted as inline file links instead of embedded block images.
+- **No side effects**: with `attach` off, dropped/pasted files are ignored; with `image` or `video` off, those files are inserted as inline file links instead of embedded block cards.
 - **Existing content is preserved**: loaded markdown round-trips even when an ability is disabled — you just can't *create* that formatting. Stripping it back (`deactivateAttribute`, unlink, heading → paragraph) always works.
 - `abilities: []` disables everything, leaving a plain-text editor. `editor.abilityEnabled(name)` tells you whether an ability is on, and the exported `Ability` type / `ALL_ABILITIES` list the possible values. `code` is selection-aware: partial selections use the inline mark, whole-block selections the code block.
 

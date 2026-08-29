@@ -2,7 +2,7 @@ import { MarkdownParser, MarkdownSerializer, type MarkdownSerializerState, type 
 import MarkdownIt from 'markdown-it'
 import Token from 'markdown-it/lib/token.mjs'
 import type { Mark, Node as PMNode } from 'prosemirror-model'
-import { schema } from './schema'
+import { schema, isVideoSrc } from './schema'
 import { URL_RE, extractHost } from './embed'
 
 interface MDToken {
@@ -194,11 +194,16 @@ const parseTokens: { [name: string]: ParseSpec } = {
   },
   image: {
     node: 'image',
-    getAttrs: (tok) => ({
-      url: tok.attrGet('src'),
-      alt: (tok.children && tok.children[0] && tok.children[0].content) || null,
-      contentType: 'image/*',
-    }),
+    getAttrs: (tok) => {
+      const src = tok.attrGet('src')
+      return {
+        url: src,
+        alt: (tok.children && tok.children[0] && tok.children[0].content) || null,
+        // A video-extension src makes the block image a video card (poster
+        // preview + play button) instead of a broken `<img>`.
+        contentType: isVideoSrc(src) ? 'video/*' : 'image/*',
+      }
+    },
   },
   hardbreak: { node: 'hard_break' },
   em: { mark: 'italic' },
@@ -342,21 +347,26 @@ function liftImagesFromParagraphs(tokens: Token[]): Token[] {
 // pasting a URL into an empty line inserts a card. Rewrite paragraphs whose
 // inline content is exactly one bare URL (no scheme is required, but the whole
 // line must be the URL) into a standalone `embed` token. Inside a blockquote —
-// which may only hold paragraphs — the URL is left as plain text.
+// which may only hold paragraphs — or a list item the URL is left as plain
+// text (matching the editor, where typing/pasting a URL inside a list degrades
+// to a link mark instead of a card).
 function liftEmbedsFromParagraphs(tokens: Token[]): Token[] {
   const out: Token[] = []
   let quoteDepth = 0
+  let listItemDepth = 0
   for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i]
     if (tok.type === 'blockquote_open') quoteDepth++
     if (tok.type === 'blockquote_close') quoteDepth--
+    if (tok.type === 'list_item_open') listItemDepth++
+    if (tok.type === 'list_item_close') listItemDepth--
     if (tok.type !== 'paragraph_open') {
       out.push(tok)
       continue
     }
     const inline = tokens[i + 1]
     const close = tokens[i + 2]
-    if (quoteDepth > 0 || !inline || inline.type !== 'inline' || !close || close.type !== 'paragraph_close') {
+    if (quoteDepth > 0 || listItemDepth > 0 || !inline || inline.type !== 'inline' || !close || close.type !== 'paragraph_close') {
       out.push(tok)
       continue
     }
@@ -374,13 +384,152 @@ function liftEmbedsFromParagraphs(tokens: Token[]): Token[] {
   return out
 }
 
+// List items may only hold paragraphs, so rewrite the token stream so any
+// non-paragraph block inside a list item degrades or moves out: headings become
+// paragraphs, code blocks become one paragraph per line, horizontal rules are
+// dropped, and nested lists are flattened into their item's paragraphs.
+// Otherwise `MarkdownParser` would silently drop the whole list when the
+// content fails to fit the `paragraph+` schema. Block images cannot live inside
+// a list item either, so each is lifted out into a standalone block right after
+// the list; an item left with no paragraphs (and a list left with no items) is
+// dropped, matching what the node-level normalization does on the HTML path.
+function normalizeListTokens(tokens: Token[]): Token[] {
+  const out: Token[] = []
+  let listDepth = 0
+  let itemDepth = 0
+  let itemTokens: Token[] | null = null
+  let itemHasParagraph = false
+  let itemDeferredImage = false
+  let listHasItems = false
+  let listStart = -1
+  const pendingImages: Token[] = []
+
+  const flushItem = (): void => {
+    if (!itemTokens) return
+    // A genuinely empty item (`- `) keeps an empty paragraph; an item whose
+    // only content was lifted out (an image) is dropped instead.
+    const isEmpty = itemTokens.length === 0 && !itemDeferredImage
+    if (itemHasParagraph || isEmpty) {
+      out.push(new Token('list_item_open', 'li', 1), ...itemTokens, new Token('list_item_close', 'li', -1))
+      listHasItems = true
+    }
+    itemTokens = null
+    itemHasParagraph = false
+    itemDeferredImage = false
+  }
+
+  for (const tok of tokens) {
+    switch (tok.type) {
+      case 'bullet_list_open':
+      case 'ordered_list_open':
+        if (listDepth === 0) {
+          listStart = out.length
+          listHasItems = false
+          out.push(tok)
+        }
+        listDepth++
+        continue
+      case 'bullet_list_close':
+      case 'ordered_list_close':
+        listDepth--
+        if (listDepth === 0) {
+          flushItem()
+          if (listHasItems) {
+            out.push(tok)
+          } else if (listStart >= 0) {
+            out.splice(listStart, 1)
+          }
+          if (pendingImages.length) {
+            out.push(...pendingImages)
+            pendingImages.length = 0
+          }
+          listStart = -1
+        }
+        continue
+      case 'list_item_open':
+        if (itemDepth === 0) {
+          itemTokens = []
+          itemHasParagraph = false
+        }
+        itemDepth++
+        continue
+      case 'list_item_close':
+        itemDepth--
+        if (itemDepth === 0) flushItem()
+        continue
+      case 'paragraph_open':
+      case 'inline':
+      case 'paragraph_close':
+        if (itemTokens) {
+          itemTokens.push(tok)
+          if (tok.type === 'paragraph_open') itemHasParagraph = true
+        } else {
+          out.push(tok)
+        }
+        continue
+      case 'heading_open':
+        if (itemTokens) {
+          itemTokens.push(new Token('paragraph_open', 'p', 1))
+          itemHasParagraph = true
+        } else {
+          out.push(tok)
+        }
+        continue
+      case 'heading_close':
+        if (itemTokens) itemTokens.push(new Token('paragraph_close', 'p', -1))
+        else out.push(tok)
+        continue
+      case 'code_block':
+      case 'fence':
+        if (itemTokens) {
+          const lines = tok.content.split('\n')
+          if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
+          if (!lines.length) lines.push('')
+          for (const line of lines) {
+            itemTokens.push(new Token('paragraph_open', 'p', 1))
+            const text = new Token('text', '', 0)
+            text.content = line
+            itemTokens.push(text)
+            itemTokens.push(new Token('paragraph_close', 'p', -1))
+            itemHasParagraph = true
+          }
+        } else {
+          out.push(tok)
+        }
+        continue
+      case 'hr':
+        // Dropped inside a list item (like inside a blockquote).
+        if (itemTokens) continue
+        out.push(tok)
+        continue
+      case 'image':
+        if (itemTokens) {
+          pendingImages.push(tok)
+          itemDeferredImage = true
+        } else {
+          out.push(tok)
+        }
+        continue
+      default:
+        if (itemTokens) itemTokens.push(tok)
+        else out.push(tok)
+    }
+  }
+  flushItem()
+  if (pendingImages.length) out.push(...pendingImages)
+  return out
+}
+
 // The parser is fed a tokenizer whose `parse` rewrites non-paragraph blockquote
 // content first (see `normalizeBlockquoteTokens`), then lifts images out of
 // paragraphs (see `liftImagesFromParagraphs`), then turns lone-URL paragraphs
-// into embed cards (see `liftEmbedsFromParagraphs`).
+// into embed cards (see `liftEmbedsFromParagraphs`), then makes list items
+// paragraph-only (see `normalizeListTokens`).
 const blockquoteSafeTokenizer = {
   parse(text: string, env?: unknown): Token[] {
-    return liftEmbedsFromParagraphs(liftImagesFromParagraphs(normalizeBlockquoteTokens(tokenizer.parse(text, env))))
+    return normalizeListTokens(
+      liftEmbedsFromParagraphs(liftImagesFromParagraphs(normalizeBlockquoteTokens(tokenizer.parse(text, env)))),
+    )
   },
 }
 

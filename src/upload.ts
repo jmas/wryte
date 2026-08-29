@@ -15,6 +15,9 @@ export interface UploadSuccessResult {
   width?: number | null
   height?: number | null
   presentation?: string | null
+  // Poster/placeholder image URL for videos: provided by the host (e.g. a
+  // thumbnail of the first frame) and shown by the video card until it plays.
+  poster?: string | null
   [key: string]: unknown
 }
 

@@ -12,12 +12,30 @@ export interface AttachmentAttrs {
   width: number | null
   height: number | null
   presentation: string | null
+  // Poster/placeholder image URL for videos: the video card shows the poster
+  // as its placeholder until it is played.
+  poster: string | null
 }
 
 const previewablePattern = /^image(\/(gif|png|webp|jpe?g|\*)|$)/
 
 export function isPreviewable(contentType: string | null): boolean {
   return contentType != null && previewablePattern.test(contentType)
+}
+
+// Videos are block nodes too: any `video/*` content type renders as a block
+// video card (a poster-image placeholder with a play button).
+export function isVideo(contentType: string | null): boolean {
+  return contentType != null && /^video(\/|$)/.test(contentType)
+}
+
+// A block image whose src points at a video file (`.mp4` etc.) is treated as a
+// video card: the `contentType` attr is set to `video/*` so the node view
+// renders the poster/play placeholder instead of a broken `<img>`. Used by the
+// HTML parser and the markdown parser to classify pasted/loaded video URLs.
+const VIDEO_EXTENSION = /\.(mp4|m4v|webm|ogv|ogg|mov)(\?.*)?$/i
+export function isVideoSrc(src: string | null): boolean {
+  return src != null && VIDEO_EXTENSION.test(src)
 }
 
 export const schema = new Schema({
@@ -75,8 +93,10 @@ export const schema = new Schema({
       ],
       toDOM: (node) => ['ol', { start: node.attrs.order === 1 ? null : node.attrs.order }, 0],
     },
+    // List items may only hold paragraphs (inline content): no headings,
+    // images, embeds, code blocks, rules or nested lists inside a list.
     list_item: {
-      content: 'block+',
+      content: 'paragraph+',
       defining: true,
       parseDOM: [{ tag: 'li' }],
       toDOM: () => ['li', 0],
@@ -163,22 +183,39 @@ export const schema = new Schema({
         width: { default: null },
         height: { default: null },
         presentation: { default: null },
+        poster: { default: null },
       },
       parseDOM: [
         {
           tag: 'img',
-          getAttrs: (dom) => ({
-            url: dom.getAttribute('src'),
-            alt: dom.getAttribute('alt'),
-            contentType: 'image/*',
-            width: dom.getAttribute('width') ? Number(dom.getAttribute('width')) : null,
-            height: dom.getAttribute('height') ? Number(dom.getAttribute('height')) : null,
-          }),
+          getAttrs: (dom) => {
+            const src = dom.getAttribute('src')
+            return {
+              url: src,
+              alt: dom.getAttribute('alt'),
+              // A `video/*` content type marks a block image as a video card
+              // (the src is a video file whose poster/preview is shown instead).
+              // Sniffed from the extension so loaded/pasted video URLs degrade
+              // to a playable card instead of a broken `<img>`.
+              contentType: isVideoSrc(src) ? 'video/*' : 'image/*',
+              poster: dom.getAttribute('data-wryte-poster'),
+              width: dom.getAttribute('width') ? Number(dom.getAttribute('width')) : null,
+              height: dom.getAttribute('height') ? Number(dom.getAttribute('height')) : null,
+            }
+          },
         },
       ],
       toDOM: (node) => {
         const attrs = node.attrs as AttachmentAttrs
-        return ['img', { src: attrs.url ?? '', alt: attrs.alt ?? '', 'data-wryte-attachment': attrs.id ?? '' }]
+        return [
+          'img',
+          {
+            src: attrs.url ?? '',
+            alt: attrs.alt ?? '',
+            'data-wryte-attachment': attrs.id ?? '',
+            'data-wryte-poster': attrs.poster ?? null,
+          },
+        ]
       },
     },
     hard_break: {

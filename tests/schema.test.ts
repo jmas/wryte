@@ -37,11 +37,23 @@ describe('block images', () => {
     }
   })
 
-  it('places an image inside a list item', () => {
+  it('lifts an image out of a list item', () => {
     const editor = makeEditor()
     editor.loadHTML('<ul><li><img src="x.png" alt="a"></li></ul>')
-    const item = editor.getDocument().child(0).child(0)
-    expect(item.child(0).type.name).toBe('image')
+    const doc = editor.getDocument()
+    expect(doc.childCount).toBe(1)
+    expect(doc.child(0).type.name).toBe('image')
+    expect(editor.toMarkdown()).toBe('![a](x.png)')
+  })
+
+  it('keeps text in a list item while lifting a block image out', () => {
+    const editor = makeEditor()
+    editor.loadHTML('<ul><li>text <img src="x.png" alt="a"></li></ul>')
+    const doc = editor.getDocument()
+    const item = doc.child(0).child(0)
+    expect(item.type.name).toBe('list_item')
+    expect(item.child(0).textContent).toBe('text')
+    expect(doc.child(1).type.name).toBe('image')
   })
 
   it('inserts a previewable attachment as a block image', () => {
@@ -63,6 +75,28 @@ describe('block images', () => {
     ])
     const types = (editor.getDocument().toJSON() as { content?: { type: string }[] }).content?.map((c) => c.type)
     expect(types).toEqual(['paragraph'])
+  })
+
+  it('lifts a block image out of a list when inserting', () => {
+    const editor = makeEditor('- one\n- two')
+    editor.setSelectedRange([1, 1])
+    editor.insertAttachments([
+      new Attachment({ id: 'x', url: 'https://e.com/a.png', alt: 'a', contentType: 'image/png' }),
+    ])
+    const types = (editor.getDocument().toJSON() as { content?: { type: string }[] }).content?.map((c) => c.type)
+    expect(types).toEqual(['bullet_list', 'image'])
+    expect(editor.toMarkdown()).toBe('* one\n* two\n\n![a](https://e.com/a.png)')
+  })
+
+  it('keeps an inline attachment inside a list item', () => {
+    const editor = makeEditor('- one')
+    editor.setSelectedRange([1, 1])
+    editor.insertAttachments([
+      new Attachment({ id: 'y', url: 'https://e.com/a.pdf', filename: 'a.pdf', contentType: 'application/pdf' }),
+    ])
+    const item = editor.getDocument().child(0).child(0)
+    expect(item.child(0).type.name).toBe('paragraph')
+    expect(item.child(0).childCount).toBeGreaterThan(1)
   })
 })
 
