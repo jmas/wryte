@@ -1,8 +1,41 @@
+<div align="center">
+
 # wryte
 
-A tag-first (markdown) rich text editor with a Trix-compatible API, built on [ProseMirror](https://prosemirror.net).
+**A tag-first (markdown) rich text editor with a Trix-compatible API, built on [ProseMirror](https://prosemirror.net).**
+
+[![npm version](https://img.shields.io/npm/v/@jmas/wryte?logo=npm&color=cb0000)](https://www.npmjs.com/package/@jmas/wryte)
+[![npm downloads](https://img.shields.io/npm/dm/@jmas/wryte)](https://www.npmjs.com/package/@jmas/wryte)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/jmas/wryte/pulls)
+
+[Docs](#quick-start) · [Demo](https://jmas.github.io/wryte/) · [npm](https://www.npmjs.com/package/@jmas/wryte) · [GitHub](https://github.com/jmas/wryte) · [Issues](https://github.com/jmas/wryte/issues)
+
+</div>
 
 Markdown is the source of truth: `element.value` reads and writes markdown, and `wryte-*` DOM events bubble from the editor element so you can listen anywhere (even on `document`).
+
+## Installation
+
+```sh
+npm install @jmas/wryte
+```
+
+Peer dependencies are installed automatically with npm 7+; for older npm (or a strict package manager) install them explicitly:
+
+```sh
+npm install @jmas/wryte prosemirror-model prosemirror-state prosemirror-view \
+  prosemirror-commands prosemirror-keymap prosemirror-inputrules \
+  prosemirror-history prosemirror-schema-basic prosemirror-schema-list \
+  prosemirror-markdown prosemirror-gapcursor
+```
+
+Then import the library (the `<wryte-editor>` custom element registers itself on import):
+
+```js
+import "@jmas/wryte"
+```
 
 ## Quick start
 
