@@ -11,6 +11,8 @@ export const EventName = {
   blur: 'wryte-blur',
   beforePaste: 'wryte-before-paste',
   paste: 'wryte-paste',
+  beforeDrop: 'wryte-before-drop',
+  drop: 'wryte-drop',
   attachmentAdd: 'wryte-attachment-add',
   attachmentEdit: 'wryte-attachment-edit',
   attachmentRemove: 'wryte-attachment-remove',

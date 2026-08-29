@@ -334,6 +334,33 @@ describe('bubble follows the editor selection', () => {
     expect(plus!.style.display).toBe('none')
   })
 
+  it('shows the (+) button again when the block popup is dismissed with Escape', () => {
+    const editor = makeEditor('')
+    editor.focus()
+    const plus = document.querySelector('.wryte-plus-button') as HTMLButtonElement | null
+    expect(plus).not.toBeNull()
+    plus!.click()
+    expect(menu()).not.toBeNull()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+
+    expect(menu()).toBeNull()
+    expect(plus!.style.display).not.toBe('none')
+  })
+
+  it('shows the (+) button again when the block popup is dismissed by clicking outside', () => {
+    const editor = makeEditor('')
+    editor.focus()
+    const plus = document.querySelector('.wryte-plus-button') as HTMLButtonElement | null
+    plus!.click()
+    expect(menu()).not.toBeNull()
+
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+
+    expect(menu()).toBeNull()
+    expect(plus!.style.display).not.toBe('none')
+  })
+
   it('opens the block popup on a real mouse sequence (mousedown + click)', () => {
     const editor = makeEditor('')
     editor.focus()

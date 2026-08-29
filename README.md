@@ -49,7 +49,7 @@ Supported attributes: `value`, `name`, `placeholder`, `input` (id of a hidden `<
 The editor never uploads anything itself. Drop or paste a file and a **`wryte-upload-request`** event bubbles up; your listener validates, uploads, and reports back. Listen on the editor element or globally on `document`.
 
 ```js
-document.addEventListener("wryte-upload-request", (event) => {
+document.addEventListener("wryte-upload-request", async (event) => {
   const { file, attachment, respond, progress } = event.detail
 
   if (file.size > 10 * 1024 * 1024) {
@@ -62,6 +62,8 @@ document.addEventListener("wryte-upload-request", (event) => {
 })
 ```
 
+Dropping files works the same way: dragging files onto the editor fires **`wryte-before-drop`** (cancelable — prevent it to ignore the whole drop) and inserts them at the drop point, then **`wryte-drop`** fires once the files are in. Pasting an image copied from your file manager (Ctrl+V) inserts it through the same pipeline — **`wryte-before-paste`** gates the file paste, then **`wryte-paste`** fires after. Files dropped/pasted with no data (plain text, or images already inside the document) fall through to ProseMirror's default handling.
+
 Lifecycle events: `wryte-file-accept` (cancelable, or call `event.detail.reject("reason")` → `wryte-file-reject`), `wryte-attachment-add`, `wryte-upload-request`, `wryte-upload-start`, `wryte-upload-progress`, `wryte-upload-success`, `wryte-upload-error`, `wryte-attachment-edit`, `wryte-attachment-remove`.
 
 ## Embeds
@@ -69,7 +71,7 @@ Lifecycle events: `wryte-file-accept` (cancelable, or call `event.detail.reject(
 A URL typed on an empty line (then a space) or pasted as a lone line becomes a **link card**: a block `div.wryte-embed` (max-width 20rem, padded flex row) showing its host, which you fill with `title`, `image` and `host` via a bubbling **`wryte-embed-request`** event — the same pattern as uploads. The editor never fetches anything itself.
 
 ```js
-document.addEventListener("wryte-embed-request", (event) => {
+document.addEventListener("wryte-embed-request", async (event) => {
   const { url, respond } = event.detail
   const { title, image, host } = await myMetadataFetcher(url)
   respond({ title, image, host })
@@ -91,7 +93,7 @@ Scope notes: inside a blockquote or list the typed URL degrades to a plain `link
 When content with images is inserted (pasted, loaded from HTML/markdown, or part of the initial document), the editor fires a bubbling **`wryte-image-request`** for every image that has no attachment id (i.e. an image that was not uploaded through this editor). The image stays visible as-is; your listener re-processes the source — for example downloading a remote image and re-uploading it to your own CDN — then reports back. The editor never fetches or re-hosts anything itself.
 
 ```js
-document.addEventListener("wryte-image-request", (event) => {
+document.addEventListener("wryte-image-request", async (event) => {
   const { url, attrs, respond, progress } = event.detail
 
   if (new URL(url).host === "my-cdn.example.com") return // already on our CDN
@@ -111,7 +113,7 @@ document.addEventListener("wryte-image-request", (event) => {
 
 ## Events
 
-All events bubble and are namespaced `wryte-*`: `wryte-before-initialize`, `wryte-initialize`, `wryte-change`, `wryte-render`, `wryte-sync`, `wryte-selection-change`, `wryte-attributes-change`, `wryte-actions-change`, `wryte-focus`, `wryte-blur`, `wryte-before-paste`, `wryte-paste`, `wryte-embed-request`, `wryte-embed-success`, `wryte-image-request`, `wryte-image-success`, `wryte-image-error`, `wryte-action-invoke`, `wryte-toolbar-dialog-show/hide`.
+All events bubble and are namespaced `wryte-*`: `wryte-before-initialize`, `wryte-initialize`, `wryte-change`, `wryte-render`, `wryte-sync`, `wryte-selection-change`, `wryte-attributes-change`, `wryte-actions-change`, `wryte-focus`, `wryte-blur`, `wryte-before-paste`, `wryte-paste`, `wryte-before-drop`, `wryte-drop`, `wryte-embed-request`, `wryte-embed-success`, `wryte-image-request`, `wryte-image-success`, `wryte-image-error`, `wryte-action-invoke`, `wryte-toolbar-dialog-show/hide`.
 
 ## Markdown scope
 

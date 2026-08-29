@@ -465,8 +465,8 @@ export class ContextMenuController {
   // --- Menu lifecycle ---
 
   private openMenu(x: number, y: number, anchor: Anchor, mode: MenuMode, placement: 'above' | 'right' = 'above'): void {
-    this.hidePlusButton()
     this.close()
+    this.hidePlusButton()
     this.anchor = anchor
     const menu = this.buildMenu(mode)
     // Keep the editor focused while pressing menu buttons: a real browser moves
@@ -891,5 +891,14 @@ export class ContextMenuController {
     window.removeEventListener('scroll', this.handleScroll, true)
     window.removeEventListener('resize', this.handleScroll)
     window.removeEventListener('blur', this.handleWindowBlur)
+    // Closing a menu does not change the selection, so `handleSelectionChange`
+    // won't re-run on its own. Re-assert the empty-line affordance: when the
+    // caret is still in an empty block (and the editor is focused and
+    // editable), bring the (+) button back — e.g. after the block popup is
+    // dismissed with Escape or an outside click.
+    if (this.editorFocused() && this.editor.options.editable !== false) {
+      const state = this.editor.editorView.state
+      if (this.caretInEmptyBlock(state)) this.showPlusButton()
+    }
   }
 }

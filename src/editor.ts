@@ -337,6 +337,8 @@ export class Editor implements AttachmentDelegate {
   private imageScanPending = false
   private attachmentsById = new Map<string, Attachment>()
   private pendingFiles = new Map<string, File>()
+  private attachmentsRefreshInProgress = false
+  private attachmentsRefreshQueued = false
   private lastAttributes: Record<string, unknown> = {}
   private lastActions: { undo: boolean; redo: boolean } = { undo: false, redo: false }
   private revision = 0
@@ -386,10 +388,20 @@ export class Editor implements AttachmentDelegate {
         return new Slice(Fragment.from(content), 0, 0)
       },
       handlePaste: (_, event) => {
-        dispatchWryteEvent(element, EventName.beforePaste, {
+        const beforePaste = dispatchWryteEvent(element, EventName.beforePaste, {
           editor: this,
           clipboardData: event.clipboardData,
         })
+        // Files pasted from the OS file manager (Ctrl+V on a copied image) go
+        // through the same `insertFiles` pipeline as drops, hitting the
+        // familiar `wryte-file-accept` → `wryte-upload-request` flow.
+        const files = event.clipboardData?.files
+        if (files && files.length > 0) {
+          event.preventDefault()
+          if (!beforePaste.defaultPrevented) this.insertFiles(Array.from(files))
+          dispatchWryteEvent(element, EventName.paste, { editor: this })
+          return true
+        }
         const text = event.clipboardData?.getData('text/plain')?.trim() ?? ''
         if (text && URL_RE.test(text)) {
           if (this.insertEmbedUrl(text)) {
@@ -414,6 +426,23 @@ export class Editor implements AttachmentDelegate {
         blur: () => {
           dispatchWryteEvent(element, EventName.blur, { editor: this })
           return false
+        },
+        // Files dragged in (from the OS or another page/tab) become
+        // attachments through the regular `insertFiles` flow, so they hit the
+        // familiar `wryte-file-accept` → `wryte-upload-request` pipeline.
+        // Returning false keeps ProseMirror's own drop handling for plain
+        // content (text, images already in the document).
+        drop: (_, event) => {
+          const files = event.dataTransfer?.files
+          if (!files || files.length === 0) return false
+          event.preventDefault()
+          const filesArray = Array.from(files)
+          if (dispatchWryteEvent(element, EventName.beforeDrop, { editor: this, files: filesArray }).defaultPrevented) {
+            return true
+          }
+          this.dropFiles(filesArray, event.clientX, event.clientY)
+          dispatchWryteEvent(element, EventName.drop, { editor: this })
+          return true
         },
       },
     })
@@ -663,6 +692,28 @@ export class Editor implements AttachmentDelegate {
   // --- Attachments ---
 
   private refreshAttachments(): void {
+    // `respond()` runs synchronously inside `refreshAttachments` and dispatches
+    // a `setNodeMarkup` transaction, which re-enters here while the outer
+    // `found` snapshot is stale. Without the guard, the outer pass would
+    // `syncFromNode` a just-responded attachment from the pre-response node
+    // (url still null) and re-request its upload. Collapse nested passes into
+    // the current one and re-scan once after it finishes.
+    if (this.attachmentsRefreshInProgress) {
+      this.attachmentsRefreshQueued = true
+      return
+    }
+    this.attachmentsRefreshInProgress = true
+    try {
+      do {
+        this.attachmentsRefreshQueued = false
+        this.scanAttachments()
+      } while (this.attachmentsRefreshQueued)
+    } finally {
+      this.attachmentsRefreshInProgress = false
+    }
+  }
+
+  private scanAttachments(): void {
     const doc = this.view.state.doc
     const found = new Map<string, PMNode>()
 
@@ -957,7 +1008,7 @@ export class Editor implements AttachmentDelegate {
   insertAttachments(attachments: Attachment[]): void {
     if (!attachments.length) return
     const state = this.view.state
-    let tr = state.tr
+    const nodes: PMNode[] = []
     for (const attachment of attachments) {
       const file = attachment.getFile()
       if (file) this.pendingFiles.set(attachment.id, file)
@@ -965,13 +1016,47 @@ export class Editor implements AttachmentDelegate {
       // Previewable (image) attachments are block nodes that stand on their own
       // line; everything else stays inline inside the paragraph.
       const type = attachment.isPreviewable() ? imageType : attachmentType
-      tr = tr.replaceSelectionWith(type.create(attrs))
+      nodes.push(type.create(attrs))
+    }
+    // Replace the selection with the first node, then insert the rest right
+    // after it. (A `replaceSelectionWith` per node would not work: the block
+    // insertion leaves a NodeSelection, and the next replace would overwrite
+    // the previous node.)
+    const first = nodes[0]
+    let tr = state.tr.replaceSelectionWith(first)
+    // The block insertion leaves a NodeSelection after the node; the mapped
+    // selection start is already the position right after it (atoms occupy a
+    // single position), so later inserts append after it.
+    let pos = tr.mapping.map(state.selection.from)
+    for (let i = 1; i < nodes.length; i++) {
+      tr = tr.insert(pos, nodes[i])
+      pos += nodes[i].nodeSize
     }
     this.view.dispatch(tr)
   }
 
   insertFile(file: File): void {
     this.insertFiles([file])
+  }
+
+  // Inserts dropped files at the pointer position (a drop lands where the user
+  // let go, not wherever the selection happened to be) and kicks off the
+  // familiar upload flow; previewable files become block images. When layout
+  // is unavailable (jsdom), `posAtCoords` returns null and the current
+  // selection is used instead.
+  private dropFiles(files: File[], clientX: number, clientY: number): void {
+    const state = this.view.state
+    let pos: { pos: number; inside: number } | null = null
+    try {
+      pos = this.view.posAtCoords({ left: clientX, top: clientY })
+    } catch {
+      pos = null
+    }
+    if (pos != null) {
+      const selection = TextSelection.near(state.doc.resolve(pos.pos))
+      if (!selection.eq(state.selection)) this.view.dispatch(state.tr.setSelection(selection))
+    }
+    this.insertFiles(files)
   }
 
   insertFiles(files: FileList | File[]): void {
