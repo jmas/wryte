@@ -1,6 +1,6 @@
 {
   "name": "@jmas/wryte",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "A tag-first (markdown) rich text editor with a Trix-compatible API, built on ProseMirror.",
   "type": "module",
   "publishConfig": {
