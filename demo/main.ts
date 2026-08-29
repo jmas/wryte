@@ -35,6 +35,9 @@ const events = [
   'wryte-upload-error',
   'wryte-embed-request',
   'wryte-embed-success',
+  'wryte-image-request',
+  'wryte-image-success',
+  'wryte-image-error',
 ] as const
 for (const name of events) {
   element.addEventListener(name, (event) => record((event as CustomEvent).type))
@@ -81,6 +84,32 @@ element.addEventListener('wryte-upload-request', (event) => {
     if (progress >= 1) {
       clearInterval(timer)
       detail.respond({ url, width: 640, height: 360 })
+    }
+  }, 200)
+})
+
+element.addEventListener('wryte-image-request', (event) => {
+  const detail = (event as CustomEvent).detail as {
+    url: string
+    respond: (result: { url: string; alt?: string }) => void
+    progress: (fraction: number) => void
+  }
+  console.log('wryte-image-request:', detail.url)
+
+  // Simulate downloading the external image and re-uploading it to our CDN:
+  // the original image stays visible, the progress circle shows while
+  // uploading, then the src swaps to the new URL.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="100%" height="100%" fill="#fef3c7"/><text x="320" y="190" font-family="sans-serif" font-size="30" text-anchor="middle" fill="#b45309">cdn: ${new URL(detail.url).host}</text></svg>`
+  const url = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+
+  detail.progress(0.05)
+  let progress = 0.05
+  const timer = setInterval(() => {
+    progress = Math.min(1, progress + 0.2)
+    detail.progress(progress)
+    if (progress >= 1) {
+      clearInterval(timer)
+      detail.respond({ url, alt: 're-hosted on our CDN' })
     }
   }, 200)
 })

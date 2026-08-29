@@ -11,6 +11,8 @@ export { EventName } from './events.js'
 export type { WryteEventName } from './events.js'
 export { URL_RE, extractHost, normalizeUrl, EmbedManager } from './embed.js'
 export type { EmbedAttrs, EmbedRequestDetail, EmbedResult } from './embed.js'
+export { ImageManager } from './image.js'
+export type { ImageErrorResult, ImageRequestDetail, ImageRequestResult, ImageResult } from './image.js'
 export type {
   UploadErrorResult,
   UploadRequestDetail,

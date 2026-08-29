@@ -28,6 +28,7 @@ import { EventName, dispatchWryteEvent } from './events'
 import type { WryteEventName } from './events'
 import { UploadManager, type UploadSuccessResult } from './upload'
 import { EmbedManager, extractHost, URL_RE, type EmbedResult } from './embed'
+import { ImageManager, type ImageResult } from './image'
 import { textOffsetToPos, posToTextOffset, lastInlinePos } from './positions'
 import { ToolbarController } from './toolbar'
 import { ContextMenuController } from './contextmenu'
@@ -329,7 +330,9 @@ export class Editor implements AttachmentDelegate {
   private view!: EditorView
   private uploadManager = new UploadManager(this)
   private embedManager = new EmbedManager(this)
+  private imageManager = new ImageManager(this)
   private embedScanPending = false
+  private imageScanPending = false
   private attachmentsById = new Map<string, Attachment>()
   private pendingFiles = new Map<string, File>()
   private lastAttributes: Record<string, unknown> = {}
@@ -358,10 +361,18 @@ export class Editor implements AttachmentDelegate {
           const pending =
             id != null && (this.pendingFiles.has(id) || this.attachmentsById.get(id)?.isPending() === true)
           const attachment = id != null ? this.attachmentsById.get(id) : undefined
-          const nodeView = new ImageNodeView(node, pending, attachment?.getUploadProgress() ?? 0, () => {
-            if (id != null) this.imageNodeViews.delete(id)
-          })
+          const nodeView = new ImageNodeView(
+            node,
+            pending,
+            attachment?.getUploadProgress() ?? 0,
+            (url) => this.imageManager.registerNodeView(nodeView, url),
+            () => {
+              this.imageManager.unregisterNodeView(nodeView)
+              if (id != null) this.imageNodeViews.delete(id)
+            },
+          )
           if (id != null) this.imageNodeViews.set(id, nodeView)
+          this.imageManager.registerNodeView(nodeView, node.attrs.url as string | null)
           return nodeView
         },
       },
@@ -410,8 +421,9 @@ export class Editor implements AttachmentDelegate {
     this.setupContextMenu()
     this.refreshAttachments()
     this.refreshSelectionState(this.view.state)
-    // Kick off the embed scan for the initial document.
+    // Kick off the embed and image-source scans for the initial document.
     this.scheduleEmbedScan()
+    this.scheduleImageScan()
 
     if (this.options.disableSpellcheck) element.setAttribute('spellcheck', 'false')
     if (this.options.tabIndex != null) element.tabIndex = this.options.tabIndex
@@ -540,6 +552,7 @@ export class Editor implements AttachmentDelegate {
     }
 
     this.scheduleEmbedScan()
+    this.scheduleImageScan()
     this.refreshSelectionState(nextState)
     this.updateEmptyState(nextState)
   }
@@ -555,6 +568,17 @@ export class Editor implements AttachmentDelegate {
     setTimeout(() => {
       this.embedScanPending = false
       this.embedManager.refresh()
+    }, 0)
+  }
+
+  // Same deferred scan for external image sources (`wryte-image-request`), so
+  // listeners attached in the same task also catch pasted/loaded images.
+  private scheduleImageScan(): void {
+    if (this.imageScanPending) return
+    this.imageScanPending = true
+    setTimeout(() => {
+      this.imageScanPending = false
+      this.imageManager.refresh()
     }, 0)
   }
 
@@ -899,6 +923,30 @@ export class Editor implements AttachmentDelegate {
     dispatchWryteEvent(this.element, EventName.embedSuccess, { editor: this, url, attributes: result })
   }
 
+  // Applies a `wryte-image-request` response to every image node with `url`,
+  // swapping the source (and any other provided attrs). A no-op response
+  // (same attrs) doesn't touch the document, so refills never loop. Missing
+  // fields keep the current image attributes.
+  succeedImage(url: string, result: ImageResult): void {
+    const tr = this.view.state.tr
+    let changed = false
+    this.view.state.doc.descendants((node, pos) => {
+      if (node.type !== imageType || node.attrs.url !== url) return
+      const attrs = {
+        ...node.attrs,
+        url: result.url ?? node.attrs.url,
+        href: result.href ?? node.attrs.href,
+        alt: result.alt ?? node.attrs.alt,
+        width: result.width ?? node.attrs.width,
+        height: result.height ?? node.attrs.height,
+      }
+      if (JSON.stringify(attrs) === JSON.stringify(node.attrs)) return
+      tr.setNodeMarkup(pos, null, attrs)
+      changed = true
+    })
+    if (changed) this.view.dispatch(tr)
+    dispatchWryteEvent(this.element, EventName.imageSuccess, { editor: this, url, attributes: result })
+  }
 
   insertAttachment(attachment: Attachment): void {
     this.insertAttachments([attachment])

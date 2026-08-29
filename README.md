@@ -86,9 +86,32 @@ element.editor.insertEmbed("https://prosemirror.net")
 
 Scope notes: inside a blockquote or list the typed URL degrades to a plain `link` mark instead of a card, and pasting a URL over an existing selection keeps it as plain text. A lone-URL line in markdown parses as an embed and serializes back to the bare URL.
 
+## External image sources
+
+When content with images is inserted (pasted, loaded from HTML/markdown, or part of the initial document), the editor fires a bubbling **`wryte-image-request`** for every image that has no attachment id (i.e. an image that was not uploaded through this editor). The image stays visible as-is; your listener re-processes the source — for example downloading a remote image and re-uploading it to your own CDN — then reports back. The editor never fetches or re-hosts anything itself.
+
+```js
+document.addEventListener("wryte-image-request", (event) => {
+  const { url, attrs, respond, progress } = event.detail
+
+  if (new URL(url).host === "my-cdn.example.com") return // already on our CDN
+
+  // progress(fraction) drives the same circular progress overlay (no percent)
+  // shown on top of the image while it's being re-hosted.
+  const cdnUrl = await rehost(url, (fraction) => progress(fraction))
+  respond({ url: cdnUrl })
+})
+```
+
+- `progress(fraction)` shows the existing circular progress overlay over the current image (it stays visible underneath) and hides it once you respond.
+- `respond({ url, ... })` swaps the image `src` and fires **`wryte-image-success`**; missing fields keep the current attributes.
+- `respond({ error: { message } })` resets the overlay, keeps the original image, and fires **`wryte-image-error`**.
+- Each URL is requested once until it leaves the document; the resolved URL is marked requested too, so a successful swap never re-fires.
+- Images uploaded through the editor (which have an attachment id) are skipped — they already go through `wryte-upload-request`.
+
 ## Events
 
-All events bubble and are namespaced `wryte-*`: `wryte-before-initialize`, `wryte-initialize`, `wryte-change`, `wryte-render`, `wryte-sync`, `wryte-selection-change`, `wryte-attributes-change`, `wryte-actions-change`, `wryte-focus`, `wryte-blur`, `wryte-before-paste`, `wryte-paste`, `wryte-embed-request`, `wryte-embed-success`, `wryte-action-invoke`, `wryte-toolbar-dialog-show/hide`.
+All events bubble and are namespaced `wryte-*`: `wryte-before-initialize`, `wryte-initialize`, `wryte-change`, `wryte-render`, `wryte-sync`, `wryte-selection-change`, `wryte-attributes-change`, `wryte-actions-change`, `wryte-focus`, `wryte-blur`, `wryte-before-paste`, `wryte-paste`, `wryte-embed-request`, `wryte-embed-success`, `wryte-image-request`, `wryte-image-success`, `wryte-image-error`, `wryte-action-invoke`, `wryte-toolbar-dialog-show/hide`.
 
 ## Markdown scope
 
