@@ -1,4 +1,4 @@
-import { NodeSelection, TextSelection, type EditorState } from 'prosemirror-state'
+import { NodeSelection, type EditorState } from 'prosemirror-state'
 import type { Editor } from './editor'
 import { acceptAttribute } from './upload'
 import { iconMarkup, type IconName } from './icons'
@@ -124,7 +124,7 @@ function ensureStyles(): void {
 }
 
 type MenuMode = 'format' | 'block' | 'image'
-type Anchor = 'selection' | 'pointer' | 'block'
+type Anchor = 'selection' | 'block'
 
 interface Rect {
   left: number
@@ -138,7 +138,9 @@ interface Rect {
 // - caret in an empty line -> inline (+) button on the right of the line;
 //   clicking it opens a block-insertion popup (attachment, code, quote,
 //   heading, lists)
-// - right-click / long-press -> context menu at the pointer
+// Right-click is deliberately not handled: the browser's native context menu
+// always shows. The wryte popup only appears for a text selection or the (+)
+// button.
 export class ContextMenuController {
   private menu: HTMLElement | null = null
   private anchor: Anchor | null = null
@@ -146,9 +148,6 @@ export class ContextMenuController {
   private plusPositionRaf: number | null = null
   private plusFontsListenerAttached = false
   private fileInput: HTMLInputElement | null = null
-  private longPressTimer: ReturnType<typeof setTimeout> | null = null
-  private longPressOrigin: { x: number; y: number } | null = null
-  private lastOpen = 0
   private suppressNextFocusOpen = false
 
   constructor(private editor: Editor) {
@@ -163,11 +162,6 @@ export class ContextMenuController {
     editor.element.appendChild(this.fileInput)
 
     const element = editor.element
-    element.addEventListener('contextmenu', this.handleContextMenu)
-    element.addEventListener('pointerdown', this.handlePointerDown)
-    element.addEventListener('pointermove', this.handlePointerMove)
-    element.addEventListener('pointerup', this.handlePointerEnd)
-    element.addEventListener('pointercancel', this.handlePointerEnd)
     element.addEventListener('wryte-selection-change', this.handleSelectionChange)
     element.addEventListener('wryte-focus', this.handleFocus)
     element.addEventListener('focusout', this.handleFocusOut)
@@ -181,11 +175,6 @@ export class ContextMenuController {
     this.fileInput?.remove()
     this.fileInput = null
     const element = this.editor.element
-    element.removeEventListener('contextmenu', this.handleContextMenu)
-    element.removeEventListener('pointerdown', this.handlePointerDown)
-    element.removeEventListener('pointermove', this.handlePointerMove)
-    element.removeEventListener('pointerup', this.handlePointerEnd)
-    element.removeEventListener('pointercancel', this.handlePointerEnd)
     element.removeEventListener('wryte-selection-change', this.handleSelectionChange)
     element.removeEventListener('wryte-focus', this.handleFocus)
     element.removeEventListener('focusout', this.handleFocusOut)
@@ -215,7 +204,7 @@ export class ContextMenuController {
   }
 
   private handleSelectionChange = (): void => {
-    if (this.anchor === 'pointer' || this.anchor === 'block') return
+    if (this.anchor === 'block') return
     if (!this.editorFocused() || this.editor.readonly) {
       this.hidePlusButton()
       this.close()
@@ -426,80 +415,6 @@ export class ContextMenuController {
     this.close()
   }
 
-  // --- Pointer-driven behavior (right-click / long-press) ---
-
-  private handleContextMenu = (event: MouseEvent): void => {
-    event.preventDefault()
-    if (Date.now() - this.lastOpen < 400) return
-    // A right-click directly on an image opens the image tools even when the
-    // image was never selected: NodeSelect it and show the image menu.
-    const imagePos = this.imagePosAtPointer(event.clientX, event.clientY)
-    if (imagePos != null) {
-      const view = this.editor.editorView
-      view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, imagePos)))
-      this.openMenu(event.clientX, event.clientY, 'pointer', 'image')
-      return
-    }
-    this.placeCaretIfNeeded(event.clientX, event.clientY)
-    this.openMenu(event.clientX, event.clientY, 'pointer', this.menuModeForContext())
-  }
-
-  private imagePosAtPointer(x: number, y: number): number | null {
-    const view = this.editor.editorView
-    let hit: { pos: number; inside: number } | null = null
-    try {
-      hit = view.posAtCoords({ left: x, top: y })
-    } catch {
-      hit = null
-    }
-    if (!hit) return null
-    for (const pos of [hit.pos, hit.inside >= 0 ? hit.pos - 1 : -1]) {
-      if (pos < 0) continue
-      const node = view.state.doc.nodeAt(pos)
-      if (node && node.type.name === 'image') return pos
-    }
-    return null
-  }
-
-  private handlePointerDown = (event: PointerEvent): void => {
-    if (event.pointerType === 'mouse') return
-    this.longPressOrigin = { x: event.clientX, y: event.clientY }
-    this.clearLongPress()
-    this.longPressTimer = setTimeout(() => {
-      if (!this.longPressOrigin) return
-      this.lastOpen = Date.now()
-      this.openMenu(this.longPressOrigin.x, this.longPressOrigin.y, 'pointer', this.menuModeForContext())
-    }, 550)
-  }
-
-  private handlePointerMove = (event: PointerEvent): void => {
-    if (!this.longPressOrigin) return
-    const dx = Math.abs(event.clientX - this.longPressOrigin.x)
-    const dy = Math.abs(event.clientY - this.longPressOrigin.y)
-    if (dx + dy > 8) this.clearLongPress()
-  }
-
-  private handlePointerEnd = (): void => {
-    this.clearLongPress()
-  }
-
-  private clearLongPress(): void {
-    if (this.longPressTimer) clearTimeout(this.longPressTimer)
-    this.longPressTimer = null
-    this.longPressOrigin = null
-  }
-
-  private menuModeForContext(): MenuMode {
-    const state = this.editor.editorView.state
-    // A block-node selection over an image gets the image tools (edit alt /
-    // remove); any other block node (horizontal rule, embed) falls back to the
-    // block-insertion popup.
-    if (state.selection instanceof NodeSelection && state.selection.node.type.name === 'image') return 'image'
-    if (state.selection instanceof NodeSelection && state.selection.node.isBlock) return 'block'
-    if (state.selection.empty && this.caretInEmptyBlock(state)) return 'block'
-    return 'format'
-  }
-
   private openSelectionBubble(mode: MenuMode = 'format'): void {
     const rect = this.selectionRect()
     if (!rect) {
@@ -605,21 +520,6 @@ export class ContextMenuController {
 
   private handleWindowBlur = (): void => {
     this.close()
-  }
-
-  private placeCaretIfNeeded(x: number, y: number): void {
-    const view = this.editor.editorView
-    let hit: { pos: number; inside: number } | null = null
-    try {
-      hit = view.posAtCoords({ left: x, top: y })
-    } catch {
-      hit = null
-    }
-    if (!hit || hit.inside < 0) return
-    const { from, to } = view.state.selection
-    if (hit.pos < from || hit.pos > to) {
-      view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(hit.pos))))
-    }
   }
 
   // Builds the popup for the given mode, showing only the buttons whose

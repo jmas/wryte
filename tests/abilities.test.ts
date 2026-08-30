@@ -36,10 +36,6 @@ function selectFirstImage(editor: Editor): void {
   editor.editorView.dispatch(editor.editorView.state.tr.setSelection(NodeSelection.create(doc, imgPos)))
 }
 
-function rightClick(element: HTMLElement): void {
-  element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 50, clientY: 50 }))
-}
-
 function menu(): HTMLElement | null {
   return document.querySelector('.wryte-context-menu')
 }
@@ -309,7 +305,6 @@ describe('context menu gating', () => {
     const editor = makeEditor('some text', { abilities: ['bold', 'quote'] })
     editor.focus()
     editor.setSelectedRange([0, 4])
-    rightClick(editor.element)
 
     const bubble = menu()
     expect(bubble).not.toBeNull()
@@ -326,7 +321,6 @@ describe('context menu gating', () => {
     const editor = makeEditor('some text', { abilities: ['embed'] })
     editor.focus()
     editor.setSelectedRange([0, 4])
-    rightClick(editor.element)
     expect(menu()).toBeNull()
   })
 
@@ -384,7 +378,6 @@ describe('context menu gating', () => {
     )
     editor.focus()
     selectFirstImage(editor)
-    rightClick(editor.element)
     expect(menu()).toBeNull()
   })
 

@@ -9,12 +9,15 @@ function makeEditor(value = 'some text', options: Record<string, unknown> = {}):
   return new Editor(element, { toolbar: false, value, ...options })
 }
 
-function rightClick(element: HTMLElement, x = 50, y = 50): void {
-  element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }))
-}
-
 function menu(): HTMLElement | null {
   return document.querySelector('.wryte-context-menu')
+}
+
+// Right-click must not be intercepted: the browser's native context menu shows.
+function contextMenuEvent(target: HTMLElement): MouseEvent {
+  const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 50, clientY: 50 })
+  target.dispatchEvent(event)
+  return event
 }
 
 // Selects the first block image node in the document (a NodeSelection).
@@ -52,10 +55,44 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+describe('native browser context menu', () => {
+  it('does not intercept right-click and opens no wryte menu', () => {
+    const editor = makeEditor('some text')
+    const event = contextMenuEvent(editor.element)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(menu()).toBeNull()
+  })
+
+  it('does not intercept right-click over a selected image either', () => {
+    const editor = makeEditor('')
+    editor.loadDocument(
+      schema.nodeFromJSON({
+        type: 'doc',
+        content: [
+          { type: 'paragraph' },
+          {
+            type: 'image',
+            attrs: { url: 'https://example.com/x.png', filename: 'x.png', contentType: 'image/png' },
+          },
+          { type: 'paragraph' },
+        ],
+      }),
+    )
+    editor.focus()
+    selectFirstImage(editor)
+    expect(menu()).not.toBeNull()
+
+    const event = contextMenuEvent(editor.element)
+    expect(event.defaultPrevented).toBe(false)
+  })
+})
+
 describe('bubble menu', () => {
-  it('is a bubble with icon buttons and opens on right-click', () => {
+  it('is a bubble with icon buttons and opens on a text selection', () => {
     const editor = makeEditor()
-    rightClick(editor.element)
+    editor.focus()
+    editor.setSelectedRange([0, 4])
 
     const bubble = menu()
     expect(bubble).not.toBeNull()
@@ -66,8 +103,8 @@ describe('bubble menu', () => {
 
   it('applies formatting from the bubble', () => {
     const editor = makeEditor()
+    editor.focus()
     editor.setSelectedRange([0, 4])
-    rightClick(editor.element)
 
     const emphasis = menu()!.querySelector('[data-wryte-attribute="bold"]') as HTMLButtonElement
     emphasis.click()
@@ -76,8 +113,8 @@ describe('bubble menu', () => {
 
   it('applies bold from the emphasis bubble button without stealing focus', () => {
     const editor = makeEditor()
+    editor.focus()
     editor.setSelectedRange([0, 4])
-    rightClick(editor.element)
 
     // A real browser targets the SVG child (`SVGElement`, not `HTMLElement`)
     // on mousedown, so the focus guard must prevent default for those too.
@@ -92,8 +129,8 @@ describe('bubble menu', () => {
 
   it('cycles the emphasis bubble button in place: none -> bold -> italic -> strike -> none', () => {
     const editor = makeEditor('a paragraph')
+    editor.focus()
     editor.setSelectedRange([0, 11])
-    rightClick(editor.element)
 
     const button = menu()!.querySelector('[data-wryte-attribute="bold"]') as HTMLButtonElement
     expectIcon(button, 'bold')
@@ -127,8 +164,8 @@ describe('bubble menu', () => {
 
   it('cycles the code/spoiler bubble button in place: none -> spoiler -> code -> none', () => {
     const editor = makeEditor('a paragraph')
+    editor.focus()
     editor.setSelectedRange([0, 4])
-    rightClick(editor.element)
 
     const button = menu()!.querySelector('[data-wryte-attribute="code"]') as HTMLButtonElement
     expectIcon(button, 'spoiler')
@@ -155,8 +192,8 @@ describe('bubble menu', () => {
 
   it('applies inline code, not a code block, over a whole-paragraph selection', () => {
     const editor = makeEditor('a paragraph')
+    editor.focus()
     editor.setSelectedRange([0, 11])
-    rightClick(editor.element)
 
     const button = menu()!.querySelector('[data-wryte-attribute="code"]') as HTMLButtonElement
     // The cycle starts at spoiler; two presses reach the code step.
@@ -168,8 +205,8 @@ describe('bubble menu', () => {
 
   it('toggles block attributes from the bubble and keeps it open', () => {
     const editor = makeEditor('a paragraph')
+    editor.focus()
     editor.setSelectedRange([0, 10])
-    rightClick(editor.element)
 
     ;(menu()!.querySelector('[data-wryte-attribute="heading2"]') as HTMLButtonElement).click()
     expect(editor.toMarkdown()).toMatch(/^## a paragraph/)
@@ -178,9 +215,9 @@ describe('bubble menu', () => {
 
   it('reflects the current heading level on the bubble heading button', () => {
     const editor = makeEditor('a paragraph')
+    editor.focus()
     editor.setSelectedRange([0, 10])
 
-    rightClick(editor.element)
     const heading = menu()!.querySelector('[data-wryte-attribute="heading2"]') as HTMLButtonElement
     expectIcon(heading, 'heading2')
     expect(heading.classList.contains('is-active')).toBe(false)
@@ -206,9 +243,9 @@ describe('bubble menu', () => {
 
   it('cycles the list button on the bubble: paragraph -> bullet -> number -> paragraph', () => {
     const editor = makeEditor('a paragraph')
+    editor.focus()
     editor.setSelectedRange([0, 10])
 
-    rightClick(editor.element)
     const list = menu()!.querySelector('[data-wryte-attribute="bullet"]') as HTMLButtonElement
     expect(list.classList.contains('is-active')).toBe(false)
     expectIcon(list, 'bullet')
@@ -233,7 +270,6 @@ describe('bubble menu', () => {
     const editor = makeEditor()
     editor.focus()
     editor.setSelectedRange([0, 4])
-    rightClick(editor.element)
 
     ;(menu()!.querySelector('[data-wryte-action="link"]') as HTMLButtonElement).click()
     const input = menu()!.querySelector('.wryte-context-link-input') as HTMLInputElement
@@ -245,8 +281,8 @@ describe('bubble menu', () => {
 
   it('prefills the link form with the current link when editing', () => {
     const editor = makeEditor('[some](https://example.com) text')
+    editor.focus()
     editor.setSelectedRange([0, 4])
-    rightClick(editor.element)
 
     ;(menu()!.querySelector('[data-wryte-action="link"]') as HTMLButtonElement).click()
     const input = menu()!.querySelector('.wryte-context-link-input') as HTMLInputElement
@@ -257,7 +293,6 @@ describe('bubble menu', () => {
     const editor = makeEditor()
     editor.focus()
     editor.setSelectedRange([0, 4])
-    rightClick(editor.element)
 
     ;(menu()!.querySelector('[data-wryte-action="link"]') as HTMLButtonElement).click()
     const input = menu()!.querySelector('.wryte-context-link-input') as HTMLInputElement
@@ -275,7 +310,8 @@ describe('bubble menu', () => {
 
   it('closes on Escape', () => {
     const editor = makeEditor()
-    rightClick(editor.element)
+    editor.focus()
+    editor.setSelectedRange([0, 4])
     expect(menu()).not.toBeNull()
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
@@ -284,7 +320,8 @@ describe('bubble menu', () => {
 
   it('closes when clicking outside the menu', () => {
     const editor = makeEditor()
-    rightClick(editor.element)
+    editor.focus()
+    editor.setSelectedRange([0, 4])
     expect(menu()).not.toBeNull()
 
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
@@ -293,7 +330,8 @@ describe('bubble menu', () => {
 
   it('can be disabled via the contextMenu option', () => {
     const editor = makeEditor('some text', { contextMenu: false })
-    rightClick(editor.element)
+    editor.focus()
+    editor.setSelectedRange([0, 4])
     expect(menu()).toBeNull()
   })
 })
@@ -641,7 +679,7 @@ describe('bubble follows the editor selection', () => {
     expect(menu()).toBeNull()
   })
 
-  it('opens the image tools on right-click over a selected image', () => {
+  it('opens the image tools over a selected image without a right-click', () => {
     const editor = makeEditor('')
     editor.loadDocument(
       schema.nodeFromJSON({
@@ -658,7 +696,6 @@ describe('bubble follows the editor selection', () => {
     )
     editor.focus()
     selectFirstImage(editor)
-    rightClick(editor.element)
 
     const bubble = menu()
     expect(bubble).not.toBeNull()

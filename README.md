@@ -280,7 +280,7 @@ Formatting follows the editor:
 
 - **Text selected** → a formatting bubble appears above the selection (an emphasis button cycling bold/italic/strike, a code/spoiler button, links, headings, quotes, lists, undo/redo).
 - **Caret in an empty line** → an inline **(+)** button appears on the right of the line; clicking it opens a block-insertion popup with **attachment, code, quote, heading and lists** only.
-- **Right-click / long-press** → a context menu opens at the pointer (block popup in an empty line, formatting bubble otherwise).
+- **Right-click** is not intercepted — the browser's native context menu always shows. The wryte popup appears only for a text selection or the (+) button.
 
 Enabled by default (`contextMenu: false` to disable). When an `abilities` whitelist is set, only the buttons for enabled abilities are shown.
 

@@ -289,6 +289,19 @@ function enterInCodeBlock(state: EditorState, dispatch?: (tr: Transaction) => vo
   return true
 }
 
+// Backspace in an empty code block converts it to a paragraph, mirroring the
+// Enter behavior (`enterInCodeBlock` collapses an empty code block the same
+// way). Without this, baseKeymap's Backspace is a no-op when the code block is
+// the first block in the document — there is nothing before it to join or
+// select, so a lone empty code block could never be deleted.
+function backspaceInCodeBlock(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  const { $head, $anchor } = state.selection
+  if (!$head.sameParent($anchor)) return false
+  const block = $head.parent
+  if (block.type !== codeBlockType || block.textContent !== '') return false
+  return setBlockType(paragraphType)(state, dispatch)
+}
+
 // Wraps a line in a blockquote when `> ` is typed at its start. Never fires
 // inside an existing blockquote, so blockquotes can't be nested.
 function blockquoteInputRule(): InputRule {
@@ -696,6 +709,8 @@ export class Editor implements AttachmentDelegate {
           splitBlock,
         ),
         'Mod-Enter': newlineInCode,
+        'Backspace': backspaceInCodeBlock,
+        'Mod-Backspace': backspaceInCodeBlock,
       }),
       keymap(baseKeymap),
     ]

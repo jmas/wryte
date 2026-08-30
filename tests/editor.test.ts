@@ -520,6 +520,22 @@ describe('Editor', () => {
       expect(editor.attributeIsActive('code')).toBe(false)
     })
 
+    it('Backspace on an empty code block collapses it to a paragraph', () => {
+      editor.loadMarkdown('```\n```')
+      editor.setSelectedRange([0, 0])
+      pressKey(editor, 'Backspace')
+      expect(editor.toMarkdown()).toBe('')
+      expect(editor.attributeIsActive('code')).toBe(false)
+    })
+
+    it('Backspace does not collapse a non-empty code block', () => {
+      editor.loadMarkdown('```\nfoo\n```')
+      editor.setSelectedRange([0, 0])
+      pressKey(editor, 'Backspace')
+      expect(editor.toMarkdown()).toBe('```\nfoo\n```')
+      expect(editor.attributeIsActive('code')).toBe(true)
+    })
+
     it('Enter on an empty line inside a code block splits around a paragraph', () => {
       editor.loadMarkdown('```\nfoo\n\nbar\n```')
       // Offset 4 is the second "\n" in "foo\n\nbar" — the start of the empty line.
