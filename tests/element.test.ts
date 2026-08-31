@@ -176,6 +176,23 @@ describe('wryte-editor custom element', () => {
     expect(editor.options.abilities).toEqual(['bold'])
   })
 
+  it('parses the groups attribute into cycling button groups', () => {
+    const wrapper = makeElement('<wryte-editor groups="bold, italic, strike; spoiler, code"></wryte-editor>')
+    const editor = (wrapper.querySelector('wryte-editor')! as unknown as { editor: Editor }).editor
+    expect(editor.options.attributeGroups).toEqual([
+      ['bold', 'italic', 'strike'],
+      ['spoiler', 'code'],
+    ])
+    expect(editor.attributeGroup('bold')).toEqual(['bold', 'italic', 'strike'])
+    expect(editor.attributeGroup('link')).toBeNull()
+  })
+
+  it('leaves attributeGroups empty when the groups attribute is absent', () => {
+    const wrapper = makeElement()
+    const editor = (wrapper.querySelector('wryte-editor')! as unknown as { editor: Editor }).editor
+    expect(editor.options.attributeGroups).toEqual([])
+  })
+
   it('parses the filetypes attribute into a whitelist', () => {
     const wrapper = makeElement('<wryte-editor filetypes="image/*, video/*, .pdf"></wryte-editor>')
     const editor = (wrapper.querySelector('wryte-editor')! as unknown as { editor: Editor }).editor

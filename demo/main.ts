@@ -35,9 +35,13 @@ const toolbarEditor = requireEditor(toolbarEl, 'toolbar-editor')
 const restricted = el('restricted')
 const restrictedEditor = requireEditor(restricted, 'restricted')
 
+const grouped = el('grouped')
+const groupedEditor = requireEditor(grouped, 'grouped')
+
 const output = document.querySelector<HTMLPreElement>('#output')!
 const toolbarOutput = document.querySelector<HTMLPreElement>('#toolbar-output')!
 const restrictedOutput = document.querySelector<HTMLPreElement>('#restricted-output')!
+const groupedOutput = document.querySelector<HTMLPreElement>('#grouped-output')!
 const stateEl = document.querySelector<HTMLPreElement>('#state')!
 const logEl = document.querySelector<HTMLPreElement>('#log')!
 
@@ -45,6 +49,7 @@ function render(): void {
   output.textContent = heroEditor.toMarkdown()
   toolbarOutput.textContent = toolbarEditor.toMarkdown()
   restrictedOutput.textContent = restrictedEditor.toMarkdown()
+  groupedOutput.textContent = groupedEditor.toMarkdown()
 }
 
 // --- Event log (hero editor) ---
@@ -275,6 +280,7 @@ for (const name of [
 ] as const) {
   hero.addEventListener(name, renderState)
   toolbarEl.addEventListener(name, render)
+  grouped.addEventListener(name, render)
 }
 render()
 renderState()

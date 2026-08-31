@@ -127,16 +127,45 @@ describe('bubble menu', () => {
     expect(editor.toMarkdown()).toBe('**some** text')
   })
 
-  it('cycles the emphasis bubble button in place: none -> bold -> italic -> strike -> none', () => {
+  it('toggles bold from the separate default bubble button', () => {
     const editor = makeEditor('a paragraph')
     editor.focus()
     editor.setSelectedRange([0, 11])
 
+    const bold = menu()!.querySelector('[data-wryte-attribute="bold"]') as HTMLButtonElement
+    const italic = menu()!.querySelector('[data-wryte-attribute="italic"]') as HTMLButtonElement
+    const strike = menu()!.querySelector('[data-wryte-attribute="strike"]') as HTMLButtonElement
+    expect(bold).not.toBeNull()
+    expect(italic).not.toBeNull()
+    expect(strike).not.toBeNull()
+    expectIcon(bold, 'bold')
+    expect(bold.classList.contains('is-active')).toBe(false)
+
+    // The bubble stays open so the button can be pressed again.
+    bold.click()
+    expect(menu()).not.toBeNull()
+    expect(editor.toMarkdown()).toBe('**a paragraph**')
+    expect(bold.classList.contains('is-active')).toBe(true)
+    expect(italic.classList.contains('is-active')).toBe(false)
+
+    bold.click()
+    expect(menu()).not.toBeNull()
+    expect(editor.toMarkdown()).toBe('a paragraph')
+    expect(bold.classList.contains('is-active')).toBe(false)
+  })
+
+  it('cycles a configured emphasis group bubble button: none -> bold -> italic -> strike -> none', () => {
+    const editor = makeEditor('a paragraph', { attributeGroups: [['bold', 'italic', 'strike']] })
+    editor.focus()
+    editor.setSelectedRange([0, 11])
+
+    // The group collapses into a single button keyed on its first member.
+    expect(menu()!.querySelector('[data-wryte-attribute="italic"]')).toBeNull()
+    expect(menu()!.querySelector('[data-wryte-attribute="strike"]')).toBeNull()
     const button = menu()!.querySelector('[data-wryte-attribute="bold"]') as HTMLButtonElement
     expectIcon(button, 'bold')
     expect(button.classList.contains('is-active')).toBe(false)
 
-    // The bubble stays open so the button can be pressed again to cycle.
     button.click()
     expect(menu()).not.toBeNull()
     expect(editor.toMarkdown()).toBe('**a paragraph**')
@@ -162,12 +191,37 @@ describe('bubble menu', () => {
     expect(button.classList.contains('is-active')).toBe(false)
   })
 
-  it('cycles the code/spoiler bubble button in place: none -> spoiler -> code -> none', () => {
+  it('toggles inline code from the separate default bubble button', () => {
     const editor = makeEditor('a paragraph')
     editor.focus()
     editor.setSelectedRange([0, 4])
 
-    const button = menu()!.querySelector('[data-wryte-attribute="code"]') as HTMLButtonElement
+    const spoiler = menu()!.querySelector('[data-wryte-attribute="spoiler"]') as HTMLButtonElement
+    const code = menu()!.querySelector('[data-wryte-attribute="code"]') as HTMLButtonElement
+    expect(spoiler).not.toBeNull()
+    expect(code).not.toBeNull()
+    expectIcon(code, 'code')
+    expect(code.classList.contains('is-active')).toBe(false)
+
+    code.click()
+    expect(menu()).not.toBeNull()
+    expect(editor.toMarkdown()).toBe('`a pa`ragraph')
+    expect(code.classList.contains('is-active')).toBe(true)
+
+    code.click()
+    expect(menu()).not.toBeNull()
+    expect(editor.toMarkdown()).toBe('a paragraph')
+    expect(code.classList.contains('is-active')).toBe(false)
+  })
+
+  it('cycles a configured spoiler/code group bubble button: none -> spoiler -> code -> none', () => {
+    const editor = makeEditor('a paragraph', { attributeGroups: [['spoiler', 'code']] })
+    editor.focus()
+    editor.setSelectedRange([0, 4])
+
+    // The group collapses into a single button keyed on its first member.
+    expect(menu()!.querySelector('[data-wryte-attribute="code"]')).toBeNull()
+    const button = menu()!.querySelector('[data-wryte-attribute="spoiler"]') as HTMLButtonElement
     expectIcon(button, 'spoiler')
     expect(button.classList.contains('is-active')).toBe(false)
 
@@ -196,8 +250,6 @@ describe('bubble menu', () => {
     editor.setSelectedRange([0, 11])
 
     const button = menu()!.querySelector('[data-wryte-attribute="code"]') as HTMLButtonElement
-    // The cycle starts at spoiler; two presses reach the code step.
-    button.click()
     button.click()
     expect(editor.toMarkdown()).toBe('`a paragraph`')
     expect(editor.attributeIsActive('code')).toBe(true)

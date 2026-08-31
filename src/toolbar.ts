@@ -1,27 +1,72 @@
 import { EventName, dispatchWryteEvent } from './events'
 import type { Editor } from './editor'
 import { acceptAttribute } from './upload'
-import { iconMarkup } from './icons'
+import { iconMarkup, type IconName } from './icons'
 
 const label = {
   bold: 'Bold',
   italic: 'Italic',
   strike: 'Strikethrough',
   spoiler: 'Spoiler',
+  code: 'Code',
   link: 'Link',
   heading2: 'Heading 2',
   quote: 'Quote',
-  code: 'Code block',
   list: 'Bulleted list',
   attachFiles: 'Attach files',
   urlPlaceholder: 'https://example.com',
 }
 
-export function defaultToolbarHTML(): string {
+function toolbarLabel(attribute: string): string {
+  switch (attribute) {
+    case 'bold':
+      return label.bold
+    case 'italic':
+      return label.italic
+    case 'strike':
+      return label.strike
+    case 'spoiler':
+      return label.spoiler
+    case 'code':
+      return label.code
+    default:
+      return attribute
+  }
+}
+
+// One toolbar button per attribute. A grouped button is keyed on its first
+// member; clicking it cycles through the group (via `toggleAttribute`), so the
+// group as a whole occupies a single button.
+function attributeButtonHTML(attribute: string): string {
+  const key = attribute === 'bold' ? ' data-wryte-key="b"' : ''
+  return `<button type="button" class="wryte-toolbar-button" data-wryte-attribute="${attribute}"${key} title="${toolbarLabel(attribute)}">${iconMarkup(attribute as IconName)}</button>`
+}
+
+// Inline-formatting buttons for the default toolbar: each configured
+// `attributeGroups` group collapses into one cycling button, every other
+// inline attribute gets its own separate toggle button.
+function inlineButtonsHTML(attributeGroups: string[][]): string {
+  const inlineNames = ['bold', 'italic', 'strike', 'spoiler', 'code']
+  const buttons: string[] = []
+  const grouped = new Set<string>()
+  for (const name of inlineNames) {
+    if (grouped.has(name)) continue
+    const group = attributeGroups.find((entry) => entry.includes(name))
+    if (group) {
+      for (const member of group) grouped.add(member)
+      buttons.push(attributeButtonHTML(group[0]))
+    } else {
+      grouped.add(name)
+      buttons.push(attributeButtonHTML(name))
+    }
+  }
+  return buttons.join('\n      ')
+}
+
+export function defaultToolbarHTML(attributeGroups: string[][] = []): string {
   return `<div class="wryte-toolbar-row">
     <span class="wryte-toolbar-group">
-      <button type="button" class="wryte-toolbar-button" data-wryte-attribute="bold" data-wryte-key="b" title="${label.bold}">${iconMarkup('bold')}</button>
-      <button type="button" class="wryte-toolbar-button" data-wryte-attribute="code" title="${label.spoiler}">${iconMarkup('spoiler')}</button>
+      ${inlineButtonsHTML(attributeGroups)}
       <button type="button" class="wryte-toolbar-button" data-wryte-action="link" data-wryte-key="k" title="${label.link}">${iconMarkup('link')}</button>
     </span>
     <span class="wryte-toolbar-group">
@@ -40,9 +85,9 @@ export function defaultToolbarHTML(): string {
   </div>`
 }
 
-export function createToolbarElement(): HTMLElement {
+export function createToolbarElement(attributeGroups: string[][] = []): HTMLElement {
   const element = document.createElement('wryte-toolbar')
-  element.innerHTML = defaultToolbarHTML()
+  element.innerHTML = defaultToolbarHTML(attributeGroups)
   return element
 }
 
@@ -53,7 +98,7 @@ export class ToolbarController {
 
   constructor(private toolbar: HTMLElement, private editor: Editor) {
     if (!toolbar.querySelector('[data-wryte-attribute],[data-wryte-action]')) {
-      toolbar.innerHTML = defaultToolbarHTML()
+      toolbar.innerHTML = defaultToolbarHTML(editor.options.attributeGroups ?? [])
     }
 
     this.dialog = toolbar.querySelector('[data-wryte-dialog]')
@@ -109,49 +154,55 @@ export class ToolbarController {
   update(attributes: Record<string, unknown>): void {
     this.toolbar.querySelectorAll('[data-wryte-attribute]').forEach((element) => {
       const name = (element as HTMLElement).dataset.wryteAttribute
-      if (name) element.classList.toggle('is-active', !!attributes[name])
+      if (!name) return
+      if (name === 'heading2') {
+        this.updateHeadingButton(element as HTMLButtonElement, attributes)
+      } else if (name === 'bullet') {
+        this.updateListButton(element as HTMLButtonElement, attributes)
+      } else if (this.editor.attributeGroup(name)) {
+        this.updateGroupButton(element as HTMLButtonElement, this.editor.attributeGroup(name)!, attributes)
+      } else {
+        element.classList.toggle('is-active', !!attributes[name])
+      }
     })
 
-    const headingButton = this.toolbar.querySelector('[data-wryte-attribute="heading2"]')
-    if (headingButton) {
-      const isHeading = !!(attributes.heading2 || attributes.heading3)
-      headingButton.innerHTML = iconMarkup(attributes.heading3 ? 'heading3' : 'heading2')
-      headingButton.classList.toggle('is-active', isHeading)
-    }
+    // The link button reflects the link mark like the bubble.
+    this.toolbar.querySelectorAll('[data-wryte-action="link"]').forEach((element) => {
+      element.classList.toggle('is-active', !!attributes.href)
+    })
+  }
 
-    const listButton = this.toolbar.querySelector('[data-wryte-attribute="bullet"]')
-    if (listButton) {
-      const isNumber = !!attributes.number
-      const isList = isNumber || !!attributes.bullet
-      listButton.innerHTML = iconMarkup(isNumber ? 'number' : 'bullet')
-      listButton.setAttribute('title', isNumber ? 'Numbered list' : label.list)
-      listButton.classList.toggle('is-active', isList)
-    }
+  // The heading button cycles paragraph -> H2 -> H3 -> paragraph, so its icon
+  // must reflect the current block: the H2 glyph by default, the H3 glyph
+  // while in a heading 3.
+  private updateHeadingButton(button: HTMLButtonElement, attributes: Record<string, unknown>): void {
+    const isHeading = !!(attributes.heading2 || attributes.heading3)
+    button.innerHTML = iconMarkup(attributes.heading3 ? 'heading3' : 'heading2')
+    button.classList.toggle('is-active', isHeading)
+  }
 
-    // The emphasis button combines bold/italic/strike and cycles like the
-    // heading button, so its icon must reflect the active inline style.
-    const emphasisButton = this.toolbar.querySelector('[data-wryte-attribute="bold"]')
-    if (emphasisButton) {
-      const isBold = !!attributes.bold
-      const isItalic = !!attributes.italic
-      const isStrike = !!attributes.strike
-      const icon = isStrike ? 'strike' : isItalic ? 'italic' : 'bold'
-      emphasisButton.innerHTML = iconMarkup(icon)
-      emphasisButton.setAttribute('title', label[isStrike ? 'strike' : isItalic ? 'italic' : 'bold'])
-      emphasisButton.classList.toggle('is-active', isBold || isItalic || isStrike)
-    }
+  // The list button cycles paragraph -> bullet -> number -> paragraph, so its
+  // icon must reflect the current list type: bullet by default, numeral while
+  // a numbered list is active.
+  private updateListButton(button: HTMLButtonElement, attributes: Record<string, unknown>): void {
+    const isNumber = !!attributes.number
+    const isList = isNumber || !!attributes.bullet
+    button.innerHTML = iconMarkup(isNumber ? 'number' : 'bullet')
+    button.setAttribute('title', isNumber ? 'Numbered list' : label.list)
+    button.classList.toggle('is-active', isList)
+  }
 
-    // The code/spoiler button combines spoiler and inline code and cycles like
-    // the heading button, so its icon must reflect the active style.
-    const codeButton = this.toolbar.querySelector('[data-wryte-attribute="code"]')
-    if (codeButton) {
-      const isCode = !!attributes.code
-      const isSpoiler = !!attributes.spoiler
-      const icon = isCode ? 'code' : 'spoiler'
-      codeButton.innerHTML = iconMarkup(icon)
-      codeButton.setAttribute('title', label[isCode ? 'code' : 'spoiler'])
-      codeButton.classList.toggle('is-active', isCode || isSpoiler)
-    }
+  // A group button cycles through its members, so its icon must reflect the
+  // active style: the currently-active member's glyph, or the first member's
+  // when none is active.
+  private updateGroupButton(button: HTMLButtonElement, group: string[], attributes: Record<string, unknown>): void {
+    const active = group.find((name) => !!attributes[name])
+    const current = active ?? group[0]
+    button.innerHTML = iconMarkup(current as IconName)
+    const title = toolbarLabel(current)
+    button.title = title
+    button.setAttribute('aria-label', title)
+    button.classList.toggle('is-active', active != null)
   }
 
   toggleLinkDialog(): void {

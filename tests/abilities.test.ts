@@ -120,8 +120,17 @@ describe('attribute gating', () => {
     expect(editor.toMarkdown()).toBe('`a paragraph`')
   })
 
-  it('cycles the emphasis button only through enabled styles', () => {
+  it('toggles an ungrouped inline attribute only when its ability is on', () => {
     const editor = makeEditor('a paragraph', { abilities: ['bold', 'strike'] })
+    editor.setSelectedRange([0, 11])
+    editor.toggleAttribute('bold')
+    expect(editor.toMarkdown()).toBe('**a paragraph**')
+    editor.toggleAttribute('bold')
+    expect(editor.toMarkdown()).toBe('a paragraph')
+  })
+
+  it('cycles a configured emphasis group only through enabled styles', () => {
+    const editor = makeEditor('a paragraph', { abilities: ['bold', 'strike'], attributeGroups: [['bold', 'italic', 'strike']] })
     editor.setSelectedRange([0, 11])
     editor.toggleAttribute('bold') // none -> bold
     expect(editor.toMarkdown()).toBe('**a paragraph**')
@@ -131,8 +140,17 @@ describe('attribute gating', () => {
     expect(editor.toMarkdown()).toBe('a paragraph')
   })
 
-  it('cycles the code/spoiler button only through enabled styles', () => {
+  it('toggles inline code with only the code ability on', () => {
     const editor = makeEditor('a paragraph', { abilities: ['code'] })
+    editor.setSelectedRange([0, 4])
+    editor.toggleAttribute('code')
+    expect(editor.toMarkdown()).toBe('`a pa`ragraph')
+    editor.toggleAttribute('code')
+    expect(editor.toMarkdown()).toBe('a paragraph')
+  })
+
+  it('cycles a configured code/spoiler group only through enabled styles', () => {
+    const editor = makeEditor('a paragraph', { abilities: ['code'], attributeGroups: [['spoiler', 'code']] })
     editor.setSelectedRange([0, 4])
     editor.toggleAttribute('code') // none -> code (spoiler is skipped)
     expect(editor.toMarkdown()).toBe('`a pa`ragraph')

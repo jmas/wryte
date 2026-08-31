@@ -197,6 +197,13 @@ export interface EditorOptions {
   // Whitelist of allowed capabilities. `undefined`/`null` enables everything;
   // an array restricts the editor to exactly those abilities.
   abilities?: Ability[]
+  // Groups of attribute names that merge into a single cycling button (e.g.
+  // `[['bold','italic','strike']]`). A group's button cycles
+  // none -> member[0] -> member[1] -> ... -> none, skipping disabled members;
+  // every ungrouped attribute gets its own plain toggle button. Default `[]`
+  // (all separate). The `<wryte-editor groups="bold, italic, strike; …">`
+  // attribute mirrors this with semicolon-separated groups.
+  attributeGroups?: string[][]
 }
 
 export interface EditorConfig {
@@ -212,6 +219,7 @@ export interface EditorConfig {
   editable: boolean
   readonly: boolean
   abilities: Ability[] | null
+  attributeGroups: string[][]
 }
 
 export const config: EditorConfig = {
@@ -227,6 +235,7 @@ export const config: EditorConfig = {
   editable: true,
   readonly: false,
   abilities: null,
+  attributeGroups: [],
 }
 
 export interface EditorSelection {
@@ -1365,6 +1374,17 @@ export class Editor implements AttachmentDelegate {
     return abilities == null || abilities.includes(ability)
   }
 
+  // The configured group that merges `name` into a single cycling button
+  // (`config.attributeGroups`), or null when `name` is not grouped. The UI
+  // (context menu, toolbar) uses this to collapse grouped attributes into one
+  // button and to render its cycling state.
+  attributeGroup(name: string): string[] | null {
+    for (const group of this.options.attributeGroups ?? []) {
+      if (group.includes(name)) return group
+    }
+    return null
+  }
+
   // The ability behind a Trix-style attribute name. `code` always refers to the
   // inline code mark; the block code_block is only reachable via `setBlockCode`.
   private attributeAllowed(name: string): boolean {
@@ -1482,53 +1502,46 @@ export class Editor implements AttachmentDelegate {
   toggleAttribute(name: string): void {
     // The heading button cycles instead of toggling: paragraph -> H2 -> H3 ->
     // paragraph. The list button cycles the same way: paragraph -> bullet ->
-    // number -> paragraph. The emphasis button (bold -> italic -> strike) and
-    // the code/spoiler button cycle the same way.
+    // number -> paragraph. Any attribute in a configured `attributeGroups`
+    // group cycles through its enabled members; every other attribute toggles
+    // on/off directly.
     // `deactivateAttribute` remains for an explicit un-heading / un-list.
     if (!this.attributeAllowed(name)) return
+    const group = this.attributeGroup(name)
     if (/^heading[1-6]$/.test(name)) this.activateAttribute(name)
     else if (name === 'bullet') this.cycleListAttribute()
-    else if (name === 'bold') this.cycleBoldItalicStrike()
-    else if (name === 'code') this.cycleCodeSpoiler()
+    else if (group) this.cycleAttributeGroup(group)
     else if (this.attributeIsActive(name)) this.deactivateAttribute(name)
     else this.activateAttribute(name)
   }
 
-  // Cycles the emphasis button through the *enabled* subset of
-  // bold -> italic -> strike -> none, mirroring the heading cycle. The mark is
-  // force-set (not toggled) so switching from bold to italic never leaves text
-  // bolded. Disabled styles are skipped in the cycle but cleared when a step
-  // runs (the group is always the full set).
-  private cycleBoldItalicStrike(): void {
-    const steps: Mark['type'][] = []
-    if (this.abilityEnabled('bold')) steps.push(boldMark)
-    if (this.abilityEnabled('italic')) steps.push(italicMark)
-    if (this.abilityEnabled('strike')) steps.push(strikeMark)
-    if (!steps.length) return
-    const group = [boldMark, italicMark, strikeMark]
-    const activeIndex = steps.findIndex((mark) => markIsActive(this.view.state, mark))
-    if (activeIndex === -1) this.setOneOfMarks(group, steps[0])
-    else if (activeIndex + 1 === steps.length) this.setOneOfMarks(group, null)
-    else this.setOneOfMarks(group, steps[activeIndex + 1])
-  }
-
-  // Cycles the code/spoiler button through the *enabled* subset of
-  // spoiler -> code -> none. `code` is always the inline mark — the block
-  // code_block is only created from an empty line via `setBlockCode` — so the
-  // button stays available when either ability is on.
-  private cycleCodeSpoiler(): void {
-    const canSpoiler = this.abilityEnabled('spoiler')
-    const canCode = this.abilityEnabled('code') || this.abilityEnabled('codeBlock')
-    if (!canSpoiler && !canCode) return
-    if (this.attributeIsActive('code')) {
-      this.deactivateAttribute('code')
-    } else if (this.attributeIsActive('spoiler')) {
-      this.deactivateAttribute('spoiler')
-      if (canCode) this.activateAttribute('code')
-    } else if (canSpoiler) {
-      this.activateAttribute('spoiler')
+  // Cycles the button that merges `group` (e.g. `['bold','italic','strike']`)
+  // through its *enabled* members: none -> member[0] -> member[1] -> ... ->
+  // none. Disabled members are skipped in the cycle, and a step onto a member
+  // clears the previously active one (so switching bold -> italic never leaves
+  // the text bolded too).
+  private cycleAttributeGroup(group: string[]): void {
+    const members = group.filter((name) => this.attributeAllowed(name))
+    if (!members.length) return
+    const activeIndex = members.findIndex((name) => this.attributeIsActive(name))
+    if (activeIndex === -1) {
+      this.activateAttribute(members[0])
+      return
+    }
+    if (activeIndex + 1 === members.length) {
+      this.deactivateAttribute(members[activeIndex])
+      return
+    }
+    // Force-set the next mark in a single transaction for pure mark groups.
+    // Fall back to deactivate-then-activate when a member is active as a block
+    // attribute (e.g. `code` while the caret is in a code block).
+    const markTypes = members.map((name) => this.markTypeForAttribute(name))
+    const blockActive = members.some((name) => this.currentBlockAttribute(this.view.state) === name)
+    if (!blockActive && markTypes.every((type) => type != null)) {
+      this.setOneOfMarks(markTypes as Mark['type'][], markTypes[activeIndex + 1])
     } else {
-      this.activateAttribute('code')
+      this.deactivateAttribute(members[activeIndex])
+      this.activateAttribute(members[activeIndex + 1])
     }
   }
 

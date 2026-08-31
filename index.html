@@ -108,6 +108,20 @@
         <wryte-editor id="empty" class="editor prose" placeholder="Start typing — this editor was created empty…"></wryte-editor>
         <wryte-editor id="readonly" class="editor prose stacked" disabled value="## Read-only&#10;&#10;This editor was created with the `disabled` attribute: the content is still selectable and copyable, but nothing can be typed, dropped or pasted, and the bubble / (+) menus stay hidden.&#10;&#10;- click and select — you can copy, but not edit&#10;- `disable()` / `enable()` flip this at runtime"></wryte-editor>
       </section>
+
+      <section class="demo">
+        <h2><span class="step">5</span> Grouped buttons <span class="tag">attributeGroups</span></h2>
+        <p class="caption">
+          The bubble and toolbar show <strong>separate</strong> bold / italic / strike buttons by default.
+          Setting <code>groups="bold, italic, strike; spoiler, code"</code> merges them back into the
+          old Trix-style cycling buttons: the first group steps none → bold → italic → strike → none, the
+          second none → spoiler → code → none. An empty <code>&lt;wryte-toolbar&gt;</code> is generated
+          from the same config.
+        </p>
+        <wryte-toolbar id="grouped-toolbar" class="toolbar"></wryte-toolbar>
+        <wryte-editor id="grouped" class="editor prose" toolbar="grouped-toolbar" groups="bold, italic, strike; spoiler, code" value="## Grouped formatting&#10;&#10;Select text and press the **emphasis** button above: it cycles bold → italic → strikethrough. The button right of it cycles spoiler → inline code. Both groups are configured with the `groups` attribute — without it every button is separate.&#10;&#10;- **bold**, *italic*, ~~strike~~, ||spoiler|| and `code` all round-trip"></wryte-editor>
+        <pre id="grouped-output" class="output"></pre>
+      </section>
     </main>
     <script type="module" src="/demo/main.ts"></script>
   </body>

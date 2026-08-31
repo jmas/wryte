@@ -44,6 +44,7 @@ describe('exports', () => {
       editable: true,
       readonly: false,
       abilities: null,
+      attributeGroups: [],
     })
     expect(registerElement).toBeTypeOf('function')
     expect(Wryte.Editor).toBe(Editor)
@@ -204,38 +205,60 @@ describe('Editor', () => {
     expect(editor.attributeIsActive('bullet')).toBe(false)
   })
 
-  it('cycles the emphasis button: none -> bold -> italic -> strike -> none', () => {
+  it('toggles bold independently by default', () => {
     editor.loadMarkdown('a paragraph')
     editor.setSelectedRange([0, 11])
     editor.toggleAttribute('bold')
     expect(editor.toMarkdown()).toBe('**a paragraph**')
     expect(editor.attributeIsActive('bold')).toBe(true)
     editor.toggleAttribute('bold')
-    expect(editor.toMarkdown()).toBe('*a paragraph*')
-    expect(editor.attributeIsActive('italic')).toBe(true)
-    expect(editor.attributeIsActive('bold')).toBe(false)
-    editor.toggleAttribute('bold')
-    expect(editor.toMarkdown()).toBe('~~a paragraph~~')
-    expect(editor.attributeIsActive('strike')).toBe(true)
-    expect(editor.attributeIsActive('italic')).toBe(false)
-    editor.toggleAttribute('bold')
     expect(editor.toMarkdown()).toBe('a paragraph')
-    expect(editor.attributeIsActive('strike')).toBe(false)
+    expect(editor.attributeIsActive('bold')).toBe(false)
   })
 
-  it('cycles the code/spoiler button: none -> spoiler -> code -> none', () => {
+  it('cycles a configured emphasis group: none -> bold -> italic -> strike -> none', () => {
+    const grouped = makeEditor('a paragraph', { attributeGroups: [['bold', 'italic', 'strike']] })
+    grouped.setSelectedRange([0, 11])
+    grouped.toggleAttribute('bold')
+    expect(grouped.toMarkdown()).toBe('**a paragraph**')
+    expect(grouped.attributeIsActive('bold')).toBe(true)
+    grouped.toggleAttribute('bold')
+    expect(grouped.toMarkdown()).toBe('*a paragraph*')
+    expect(grouped.attributeIsActive('italic')).toBe(true)
+    expect(grouped.attributeIsActive('bold')).toBe(false)
+    grouped.toggleAttribute('bold')
+    expect(grouped.toMarkdown()).toBe('~~a paragraph~~')
+    expect(grouped.attributeIsActive('strike')).toBe(true)
+    expect(grouped.attributeIsActive('italic')).toBe(false)
+    grouped.toggleAttribute('bold')
+    expect(grouped.toMarkdown()).toBe('a paragraph')
+    expect(grouped.attributeIsActive('strike')).toBe(false)
+  })
+
+  it('toggles inline code independently by default', () => {
     editor.loadMarkdown('a paragraph')
     editor.setSelectedRange([0, 4])
     editor.toggleAttribute('code')
-    expect(editor.toMarkdown()).toBe('||a pa||ragraph')
-    expect(editor.attributeIsActive('spoiler')).toBe(true)
-    editor.toggleAttribute('code')
     expect(editor.toMarkdown()).toBe('`a pa`ragraph')
     expect(editor.attributeIsActive('code')).toBe(true)
-    expect(editor.attributeIsActive('spoiler')).toBe(false)
     editor.toggleAttribute('code')
     expect(editor.toMarkdown()).toBe('a paragraph')
     expect(editor.attributeIsActive('code')).toBe(false)
+  })
+
+  it('cycles a configured code/spoiler group: none -> spoiler -> code -> none', () => {
+    const grouped = makeEditor('a paragraph', { attributeGroups: [['spoiler', 'code']] })
+    grouped.setSelectedRange([0, 4])
+    grouped.toggleAttribute('code')
+    expect(grouped.toMarkdown()).toBe('||a pa||ragraph')
+    expect(grouped.attributeIsActive('spoiler')).toBe(true)
+    grouped.toggleAttribute('code')
+    expect(grouped.toMarkdown()).toBe('`a pa`ragraph')
+    expect(grouped.attributeIsActive('code')).toBe(true)
+    expect(grouped.attributeIsActive('spoiler')).toBe(false)
+    grouped.toggleAttribute('code')
+    expect(grouped.toMarkdown()).toBe('a paragraph')
+    expect(grouped.attributeIsActive('code')).toBe(false)
   })
 
   it('applies and removes the spoiler attribute directly', () => {

@@ -83,6 +83,19 @@ export function registerEditorElement(name = 'wryte-editor'): void {
           .map((entry) => entry.trim())
           .filter((entry) => entry.length > 0)
       }
+      if (this.hasAttribute('groups')) {
+        // Semicolon-separated groups of comma-separated attribute names that
+        // merge into a single cycling button, e.g. `groups="bold, italic, strike"`.
+        options.attributeGroups = (this.getAttribute('groups') ?? '')
+          .split(';')
+          .map((group) =>
+            group
+              .split(',')
+              .map((entry) => entry.trim())
+              .filter((entry) => entry.length > 0),
+          )
+          .filter((group) => group.length > 0)
+      }
 
       this.#editor = new Editor(this, options)
       if (this.hasAttribute('disabled')) this.#editor.disable()

@@ -1,5 +1,6 @@
 import { NodeSelection, type EditorState } from 'prosemirror-state'
 import type { Editor } from './editor'
+import type { Ability } from './editor'
 import { acceptAttribute } from './upload'
 import { iconMarkup, type IconName } from './icons'
 
@@ -18,6 +19,17 @@ const LABELS: Record<string, string> = {
   hr: 'Horizontal rule',
   edit: 'Edit alt text',
   trash: 'Remove image',
+}
+
+// Labels for the inline-formatting attributes, used by the bubble buttons.
+// `code` here is the inline `` `code` `` mark (a separate button by default),
+// distinct from the block `code_block` action ("Code block" above).
+const INLINE_LABELS: Record<string, string> = {
+  bold: 'Bold',
+  italic: 'Italic',
+  strike: 'Strikethrough',
+  spoiler: 'Spoiler',
+  code: 'Code',
 }
 
 let stylesInjected = false
@@ -563,12 +575,25 @@ export class ContextMenuController {
       return menu
     }
 
-    // Formatting bubble: the emphasis button (bold/italic/strike cycle) and the
-    // code/spoiler button each appear when any of their marks is enabled; the
-    // link button needs the `link` ability. The block-formatting group (heading,
+    // Formatting bubble: one button per inline-formatting attribute (bold,
+    // italic, strike, spoiler, code, link) — unless a configured
+    // `attributeGroups` group merges some of them into a single cycling button
+    // (e.g. `[['bold','italic','strike']]`). A group button appears when any
+    // of its members is enabled, is keyed on the first *enabled* member, and
+    // cycles through the enabled members. The block-formatting group (heading,
     // quote, list) mirrors the block popup.
-    const emphasis = (['bold', 'italic', 'strike'] as const).some((name) => this.editor.abilityEnabled(name))
-    const codeSpoiler = (['spoiler', 'code'] as const).some((name) => this.editor.abilityEnabled(name))
+    const inlineNames = ['bold', 'italic', 'strike', 'spoiler', 'code']
+    const inlineButtons: HTMLElement[] = []
+    const grouped = new Set<string>()
+    for (const name of inlineNames) {
+      if (grouped.has(name)) continue
+      const group = this.editor.attributeGroup(name)
+      const members = group ?? [name]
+      const enabled = members.filter((member) => this.editor.abilityEnabled(member as Ability))
+      if (!enabled.length) continue
+      for (const member of members) grouped.add(member)
+      inlineButtons.push(this.iconAttributeItem(enabled[0]))
+    }
     const link = this.editor.abilityEnabled('link')
     const blocks: Array<[IconName, boolean]> = [
       ['heading2', this.editor.abilityEnabled('heading')],
@@ -576,10 +601,9 @@ export class ContextMenuController {
       ['bullet', this.editor.abilityEnabled('list')],
     ]
     const blockButtons = blocks.filter(([, allowed]) => allowed)
-    const inlineCount = (emphasis ? 1 : 0) + (codeSpoiler ? 1 : 0) + (link ? 1 : 0)
+    const inlineCount = inlineButtons.length + (link ? 1 : 0)
     if (inlineCount === 0 && blockButtons.length === 0) return null
-    if (emphasis) menu.appendChild(this.iconAttributeItem('bold'))
-    if (codeSpoiler) menu.appendChild(this.iconAttributeItem('code'))
+    for (const button of inlineButtons) menu.appendChild(button)
     if (link) menu.appendChild(this.iconLinkItem())
     if (inlineCount > 0 && blockButtons.length > 0) menu.appendChild(this.divider())
     for (const [name] of blockButtons) menu.appendChild(this.iconAttributeItem(name))
@@ -593,13 +617,17 @@ export class ContextMenuController {
   // user can keep formatting; the selection is only reset by the user (clicking
   // away, Escape, blur). A block-code conversion collapses the selection to a
   // caret, so close then.
-  private iconAttributeItem(name: IconName): HTMLElement {
-    const button = this.iconItem(name)
+  private iconAttributeItem(name: string): HTMLElement {
+    const button = this.iconItem(name as IconName)
     button.dataset.wryteAttribute = name
+    const inlineLabel = INLINE_LABELS[name]
+    if (inlineLabel) {
+      button.title = inlineLabel
+      button.setAttribute('aria-label', inlineLabel)
+    }
     if (name === 'heading2') this.updateHeadingButton(button)
     else if (name === 'bullet') this.updateListButton(button)
-    else if (name === 'bold') this.updateEmphasisButton(button)
-    else if (name === 'code') this.updateCodeSpoilerButton(button)
+    else if (this.editor.attributeGroup(name)) this.updateGroupButton(button, this.editor.attributeGroup(name)!)
     else if (this.editor.attributeIsActive(name)) button.classList.add('is-active')
     button.addEventListener('click', () => {
       this.editor.toggleAttribute(name)
@@ -696,12 +724,9 @@ export class ContextMenuController {
         this.updateListButton(element as HTMLButtonElement)
         return
       }
-      if (name === 'bold') {
-        this.updateEmphasisButton(element as HTMLButtonElement)
-        return
-      }
-      if (name === 'code') {
-        this.updateCodeSpoilerButton(element as HTMLButtonElement)
+      const group = this.editor.attributeGroup(name)
+      if (group) {
+        this.updateGroupButton(element as HTMLButtonElement, group)
         return
       }
       element.classList.toggle('is-active', this.editor.attributeIsActive(name))
@@ -733,31 +758,18 @@ export class ContextMenuController {
     button.classList.toggle('is-active', isList)
   }
 
-  // The emphasis button cycles bold -> italic -> strike -> none, so its icon
-  // must reflect the active inline style: bold by default (the first step of
-  // the cycle), italic while italicized, strikethrough while struck through.
-  private updateEmphasisButton(button: HTMLButtonElement): void {
-    const isBold = this.editor.attributeIsActive('bold')
-    const isItalic = this.editor.attributeIsActive('italic')
-    const isStrike = this.editor.attributeIsActive('strike')
-    const icon = isStrike ? 'strike' : isItalic ? 'italic' : 'bold'
-    button.innerHTML = iconMarkup(icon)
-    button.title = LABELS[isStrike ? 'strike' : isItalic ? 'italic' : 'bold']
-    button.setAttribute('aria-label', LABELS[isStrike ? 'strike' : isItalic ? 'italic' : 'bold'])
-    button.classList.toggle('is-active', isBold || isItalic || isStrike)
-  }
-
-  // The code/spoiler button cycles spoiler -> code -> none, so its icon must
-  // reflect the active style: spoiler by default (the first step of the cycle),
-  // code while inline code is applied.
-  private updateCodeSpoilerButton(button: HTMLButtonElement): void {
-    const isCode = this.editor.attributeIsActive('code')
-    const isSpoiler = this.editor.attributeIsActive('spoiler')
-    const icon = isCode ? 'code' : 'spoiler'
-    button.innerHTML = iconMarkup(icon)
-    button.title = LABELS[isCode ? 'code' : 'spoiler']
-    button.setAttribute('aria-label', LABELS[isCode ? 'code' : 'spoiler'])
-    button.classList.toggle('is-active', isCode || isSpoiler)
+  // A group button cycles through its *enabled* members, so its icon must
+  // reflect the active style: the currently-active member's glyph, or the first
+  // enabled member's when none is active (the next step the button would take).
+  private updateGroupButton(button: HTMLButtonElement, group: string[]): void {
+    const enabled = group.filter((name) => this.editor.abilityEnabled(name as Ability))
+    const active = enabled.find((name) => this.editor.attributeIsActive(name))
+    const current = active ?? enabled[0] ?? group[0]
+    button.innerHTML = iconMarkup(current as IconName)
+    const label = INLINE_LABELS[current] ?? LABELS[current] ?? current
+    button.title = label
+    button.setAttribute('aria-label', label)
+    button.classList.toggle('is-active', active != null)
   }
 
   private showLinkForm(): void {

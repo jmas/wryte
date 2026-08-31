@@ -4,12 +4,16 @@ import type { UploadSuccessResult } from '../src/index'
 import { createToolbarElement, defaultToolbarHTML } from '../src/toolbar'
 import { ICONS, type IconName } from '../src/icons'
 
-function makeToolbarEditor(html = '', value = 'some text'): { editor: Editor; toolbar: HTMLElement } {
+function makeToolbarEditor(
+  html = '',
+  value = 'some text',
+  options: Record<string, unknown> = {},
+): { editor: Editor; toolbar: HTMLElement } {
   const toolbar = document.createElement('div')
   toolbar.innerHTML = html
   const element = document.createElement('div')
   element.appendChild(toolbar)
-  const editor = new Editor(element, { value, toolbar })
+  const editor = new Editor(element, { value, toolbar, ...options })
   return { editor, toolbar }
 }
 
@@ -95,26 +99,77 @@ describe('ToolbarController', () => {
     expect(button.classList.contains('is-active')).toBe(false)
   })
 
-  it('swaps the emphasis button between bold, italic and strike', () => {
+  it('has separate bold/italic/strike buttons by default', () => {
     const { editor, toolbar } = makeToolbarEditor()
-    const button = toolbar.querySelector('[data-wryte-attribute="bold"]')!
-    editor.setSelectedRange([0, 9])
-    editor.toggleAttribute('bold')
-    expect(showsIcon(button, 'bold')).toBe(true)
-    editor.toggleAttribute('bold')
-    expect(showsIcon(button, 'italic')).toBe(true)
-    editor.toggleAttribute('bold')
-    expect(showsIcon(button, 'strike')).toBe(true)
-    expect(button.classList.contains('is-active')).toBe(true)
+    const bold = toolbar.querySelector('[data-wryte-attribute="bold"]')!
+    const italic = toolbar.querySelector('[data-wryte-attribute="italic"]')!
+    const strike = toolbar.querySelector('[data-wryte-attribute="strike"]')!
+    expect(bold).not.toBeNull()
+    expect(italic).not.toBeNull()
+    expect(strike).not.toBeNull()
+    editor.setSelectedRange([0, 4])
+    click(bold)
+    expect(editor.toMarkdown()).toBe('**some** text')
+    expect(bold.classList.contains('is-active')).toBe(true)
+    expect(italic.classList.contains('is-active')).toBe(false)
   })
 
-  it('swaps the code/spoiler button between spoiler and code', () => {
+  it('reflects each inline mark on its own default button', () => {
     const { editor, toolbar } = makeToolbarEditor()
-    const button = toolbar.querySelector('[data-wryte-attribute="code"]')!
+    editor.loadMarkdown('**bold** *italic* ~~strike~~')
+    editor.setSelectedRange([0, 4]) // "bold"
+    expect(toolbar.querySelector('[data-wryte-attribute="bold"]')!.classList.contains('is-active')).toBe(true)
+    expect(toolbar.querySelector('[data-wryte-attribute="italic"]')!.classList.contains('is-active')).toBe(false)
+    editor.setSelectedRange([4, 10]) // "italic"
+    expect(toolbar.querySelector('[data-wryte-attribute="italic"]')!.classList.contains('is-active')).toBe(true)
+    editor.setSelectedRange([10, 16]) // "strike"
+    expect(toolbar.querySelector('[data-wryte-attribute="strike"]')!.classList.contains('is-active')).toBe(true)
+  })
+
+  it('merges a configured emphasis group into one cycling toolbar button', () => {
+    const { editor, toolbar } = makeToolbarEditor('', 'a paragraph', { attributeGroups: [['bold', 'italic', 'strike']] })
+    // The default markup is generated from the config: the group collapses into
+    // a single button.
+    const buttons = toolbar.querySelectorAll('[data-wryte-attribute="bold"],[data-wryte-attribute="italic"],[data-wryte-attribute="strike"]')
+    expect(buttons).toHaveLength(1)
+    const button = toolbar.querySelector('[data-wryte-attribute="bold"]')!
+    editor.setSelectedRange([0, 11])
+    click(button)
+    expect(editor.toMarkdown()).toBe('**a paragraph**')
+    expect(showsIcon(button, 'bold')).toBe(true)
+    click(button)
+    expect(editor.toMarkdown()).toBe('*a paragraph*')
+    expect(showsIcon(button, 'italic')).toBe(true)
+    click(button)
+    expect(editor.toMarkdown()).toBe('~~a paragraph~~')
+    expect(showsIcon(button, 'strike')).toBe(true)
+  })
+
+  it('has separate spoiler/code buttons by default', () => {
+    const { editor, toolbar } = makeToolbarEditor()
+    const spoiler = toolbar.querySelector('[data-wryte-attribute="spoiler"]')!
+    const code = toolbar.querySelector('[data-wryte-attribute="code"]')!
+    expect(spoiler).not.toBeNull()
+    expect(code).not.toBeNull()
     editor.setSelectedRange([0, 4])
-    editor.toggleAttribute('code')
+    click(code)
+    expect(editor.toMarkdown()).toBe('`some` text')
+    expect(code.classList.contains('is-active')).toBe(true)
+    click(spoiler)
+    expect(editor.toMarkdown()).toBe('||`some`|| text')
+  })
+
+  it('merges a configured spoiler/code group into one cycling toolbar button', () => {
+    const { editor, toolbar } = makeToolbarEditor('', 'a paragraph', { attributeGroups: [['spoiler', 'code']] })
+    const buttons = toolbar.querySelectorAll('[data-wryte-attribute="spoiler"],[data-wryte-attribute="code"]')
+    expect(buttons).toHaveLength(1)
+    const button = toolbar.querySelector('[data-wryte-attribute="spoiler"]')!
+    editor.setSelectedRange([0, 11])
+    click(button)
+    expect(editor.toMarkdown()).toBe('||a paragraph||')
     expect(showsIcon(button, 'spoiler')).toBe(true)
-    editor.toggleAttribute('code')
+    click(button)
+    expect(editor.toMarkdown()).toBe('`a paragraph`')
     expect(showsIcon(button, 'code')).toBe(true)
   })
 

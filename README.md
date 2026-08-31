@@ -75,7 +75,7 @@ editor.toMarkdown() // the current value
 editor.loadMarkdown("## New content")
 ```
 
-Supported attributes: `value`, `name`, `placeholder`, `input` (id of a hidden `<input>` that holds the initial markdown and receives updates — Trix-style), `toolbar` (id of an existing toolbar element), `autofocus`, `disabled`, `readonly`, `required`, `abilities` (comma-separated whitelist, see [Abilities](#abilities)), `filetypes` (comma-separated MIME types / wildcards / extensions, see [Restricting file types](#restricting-file-types)).
+Supported attributes: `value`, `name`, `placeholder`, `input` (id of a hidden `<input>` that holds the initial markdown and receives updates — Trix-style), `toolbar` (id of an existing toolbar element), `autofocus`, `disabled`, `readonly`, `required`, `abilities` (comma-separated whitelist, see [Abilities](#abilities)), `filetypes` (comma-separated MIME types / wildcards / extensions, see [Restricting file types](#restricting-file-types)), `groups` (semicolon-separated groups of attribute names to merge into a single cycling button, see [Grouping buttons](#grouping-buttons)).
 
 ### Autofocus
 
@@ -252,9 +252,9 @@ Available abilities:
 
 | Ability | Enables |
 | --- | --- |
-| `bold`, `italic`, `strike` | The emphasis button (cycles through the enabled styles) and `Mod-b` / `Mod-i` |
-| `spoiler` | The `||text||` mark (half of the code/spoiler button) |
-| `code` | The inline `` `code` `` mark (half of the code/spoiler button) |
+| `bold`, `italic`, `strike` | Separate bold / italic / strikethrough buttons and `Mod-b` / `Mod-i` (or a single cycling emphasis button when grouped, see [Grouping buttons](#grouping-buttons)) |
+| `spoiler` | The `||text||` mark (its own button; half of the code/spoiler button when grouped) |
+| `code` | The inline `` `code` `` mark (its own button; half of the code/spoiler button when grouped) |
 | `link` | The link button/form, `setLink`, `Mod-k` |
 | `heading` | Headings 2–3: `# ` input rule, the heading button, the (+) popup entry |
 | `quote` | Blockquotes: `> ` input rule, the quote button |
@@ -278,11 +278,30 @@ What a disabled ability means:
 
 Formatting follows the editor:
 
-- **Text selected** → a formatting bubble appears above the selection (an emphasis button cycling bold/italic/strike, a code/spoiler button, links, headings, quotes, lists, undo/redo).
+- **Text selected** → a formatting bubble appears above the selection (separate **bold**, *italic*, ~~strike~~, spoiler and inline-code buttons, links, headings, quotes, lists, undo/redo).
 - **Caret in an empty line** → an inline **(+)** button appears on the right of the line; clicking it opens a block-insertion popup with **attachment, code, quote, heading and lists** only.
 - **Right-click** is not intercepted — the browser's native context menu always shows. The wryte popup appears only for a text selection or the (+) button.
 
 Enabled by default (`contextMenu: false` to disable). When an `abilities` whitelist is set, only the buttons for enabled abilities are shown.
+
+### Grouping buttons
+
+The formatting bubble (and the default toolbar) shows **one button per attribute** by default — `bold`, `italic` and `strike` are separate toggles. To merge several attributes into a single **cycling** button (e.g. the old Trix-style emphasis button that steps none → bold → italic → strike → none), configure `attributeGroups`: a list of groups, each group a list of attribute names that share one button. The button cycles through its group in order, skipping members whose ability is disabled.
+
+```js
+const editor = new Editor(mount, {
+  attributeGroups: [
+    ["bold", "italic", "strike"], // one emphasis button
+    ["spoiler", "code"],          // one code/spoiler button
+  ],
+})
+```
+
+```html
+<wryte-editor groups="bold, italic, strike; spoiler, code"></wryte-editor>
+```
+
+The element `groups` attribute mirrors the config: semicolons separate groups, commas separate the members of a group. A grouped button is keyed on the first member of its group, and `toggleAttribute` of any member cycles the whole group (`toggleAttribute("bold")` with the group above steps bold → italic → strike → none). Attributes that are not in any group keep their own toggle button. The default toolbar markup is generated from the same config, so an empty `<wryte-toolbar>` reflects the grouping too.
 
 ## Toolbar (optional)
 
@@ -296,7 +315,7 @@ const editor = new Editor(mount, { toolbar: document.querySelector("#my-toolbar"
 <wryte-editor toolbar="my-toolbar"></wryte-editor>
 ```
 
-The default toolbar markup is available as `defaultToolbarHTML()` from the `toolbar` module if you want a starting point.
+The default toolbar markup is available as `defaultToolbarHTML(attributeGroups?)` from the `toolbar` module if you want a starting point (it reflects your `attributeGroups` config when passed).
 
 ## Custom element
 
